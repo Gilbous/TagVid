@@ -107,6 +107,10 @@
   </div>
 
   <div id="tableView" class="hidden">
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="small" id="btnExpandAll">▾ Déplier tout</button>
+      <button class="small" id="btnCollapseAll">▸ Replier tout</button>
+    </div>
     <table id="fileList">
       <thead><tr><th>Nom</th><th>Taille</th><th>Tags</th></tr></thead>
       <tbody></tbody>
@@ -364,6 +368,14 @@ function countFiles(node) {
 async function persistCollapsed() {
   try { await dbPut("meta", "collapsed", [...state.collapsed]); } catch (e) {}
 }
+function allDirPaths() {
+  const s = new Set();
+  for (const f of state.files) {
+    const parts = f.path.split("/");
+    for (let i = 1; i < parts.length; i++) s.add(parts.slice(0, i).join("/") + "/");
+  }
+  return s;
+}
 
 function renderTable() {
   $("mosaic").classList.add("hidden");
@@ -577,6 +589,8 @@ $("btnImport").onclick = () => $("importFile").click();
 $("importFile").onchange = e => { if (e.target.files[0]) importTags(e.target.files[0]).catch(err => alert("Import impossible : " + err.message)); };
 document.querySelectorAll('input[name="mode"]').forEach(r => r.onchange = () => { state.mode = r.value; render(); });
 $("btnClear").onclick = () => { state.selected.clear(); render(); };
+$("btnExpandAll").onclick = () => { state.collapsed.clear(); persistCollapsed(); render(); };
+$("btnCollapseAll").onclick = () => { state.collapsed = allDirPaths(); persistCollapsed(); render(); };
 $("tagDlgOk").onclick = submitTagDialog;
 $("tagDlgCancel").onclick = () => $("tagDlg").close();
 $("tagDlgInput").addEventListener("keydown", e => { if (e.key === "Enter") submitTagDialog(); });
