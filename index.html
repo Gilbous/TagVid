@@ -114,7 +114,7 @@
   <div id="filterBar" class="hidden">
     <div class="row">
       <span style="font-weight:600">Filtrer par tags :</span>
-      <span class="hintline">Dans un groupe : OU — entre groupes : ET</span>
+      <span class="hintline">Tags 1 : OU — groupes entre eux : ET — Tags 2-4 : OU ou ET au choix</span>
       <span id="resultCount"></span>
     </div>
     <div id="groups"></div>
@@ -181,6 +181,7 @@ const state = {
   letterSel: Array(NB_GROUPS).fill(null),
   groupSearch: Array(NB_GROUPS).fill(""),
   groupsOpen: new Set([0]),
+  groupMode: Array(NB_GROUPS).fill("or"),
   view: "table",
   visible: [],
   viewerIndex: -1,
@@ -354,8 +355,9 @@ function applyFilter() {
   state.visible = state.files.filter(f => {
     const groups = tagsOf(f.path);
     return active.every(g => {
-      for (const t of state.selected[g]) if (groups[g].has(t)) return true;
-      return false;
+      const sel = [...state.selected[g]];
+      if (state.groupMode[g] === "and") return sel.every(t => groups[g].has(t));
+      return sel.some(t => groups[g].has(t));
     });
   });
 }
@@ -405,12 +407,30 @@ function makeGroupPanel(g) {
 
   const tools = document.createElement("div");
   tools.className = "tools";
-  const search = document.createElement("input");
-  search.type = "search";
-  search.placeholder = "Rechercher un tag…";
-  search.value = state.groupSearch[g];
-  search.oninput = () => { state.groupSearch[g] = search.value; renderChips(); };
-  tools.appendChild(search);
+  if (g === 0) {
+    const search = document.createElement("input");
+    search.type = "search";
+    search.placeholder = "Rechercher un tag…";
+    search.value = state.groupSearch[g];
+    search.oninput = () => { state.groupSearch[g] = search.value; renderChips(); };
+    tools.appendChild(search);
+  } else {
+    const lblOr = document.createElement("label");
+    lblOr.className = "mode";
+    const rOr = document.createElement("input");
+    rOr.type = "radio"; rOr.name = "gmode" + g; rOr.value = "or";
+    rOr.checked = state.groupMode[g] === "or";
+    rOr.onchange = () => { state.groupMode[g] = "or"; render(); };
+    lblOr.append(rOr, " OU");
+    const lblAnd = document.createElement("label");
+    lblAnd.className = "mode";
+    const rAnd = document.createElement("input");
+    rAnd.type = "radio"; rAnd.name = "gmode" + g; rAnd.value = "and";
+    rAnd.checked = state.groupMode[g] === "and";
+    rAnd.onchange = () => { state.groupMode[g] = "and"; render(); };
+    lblAnd.append(rAnd, " ET");
+    tools.append(lblOr, lblAnd);
+  }
   const clearBtn = document.createElement("button");
   clearBtn.className = "small";
   clearBtn.textContent = "Effacer la sélection";
@@ -418,22 +438,24 @@ function makeGroupPanel(g) {
   clearBtn.onclick = () => { state.selected[g].clear(); render(); };
   tools.appendChild(clearBtn);
 
-  const letters = document.createElement("div");
-  letters.className = "letters";
-  const present = new Set(tags.map(normalizeKey));
-  const letterList = ["Tous", ...[...present].sort((a, b) => a.localeCompare(b, "fr"))];
-  for (const L of letterList) {
-    const s = document.createElement("span");
-    s.textContent = L;
-    const isOn = L === "Tous" ? state.letterSel[g] === null : state.letterSel[g] === L;
-    if (isOn) s.classList.add("on");
-    s.onclick = () => {
-      state.letterSel[g] = L === "Tous" ? null : L;
-      renderGroups();
-    };
-    letters.appendChild(s);
+  if (g === 0) {
+    const letters = document.createElement("div");
+    letters.className = "letters";
+    const present = new Set(tags.map(normalizeKey));
+    const letterList = ["Tous", ...[...present].sort((a, b) => a.localeCompare(b, "fr"))];
+    for (const L of letterList) {
+      const s = document.createElement("span");
+      s.textContent = L;
+      const isOn = L === "Tous" ? state.letterSel[g] === null : state.letterSel[g] === L;
+      if (isOn) s.classList.add("on");
+      s.onclick = () => {
+        state.letterSel[g] = L === "Tous" ? null : L;
+        renderGroups();
+      };
+      letters.appendChild(s);
+    }
+    tools.appendChild(letters);
   }
-  tools.appendChild(letters);
   body.appendChild(tools);
 
   const chips = document.createElement("div");
@@ -443,11 +465,11 @@ function makeGroupPanel(g) {
   function renderChips() {
     chips.innerHTML = "";
     const q = state.groupSearch[g].trim().toLocaleLowerCase("fr");
-    const shown = tags.filter(t => {
+    const shown = g === 0 ? tags.filter(t => {
       const okLetter = state.letterSel[g] === null || normalizeKey(t) === state.letterSel[g];
       const okSearch = !q || t.toLocaleLowerCase("fr").includes(q);
       return okLetter && okSearch;
-    });
+    }) : tags;
     if (shown.length === 0) {
       chips.innerHTML = `<span class="hintline">${tags.length === 0 ? "Aucun tag dans ce groupe." : "Aucun tag ne correspond."}</span>`;
       return;
