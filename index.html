@@ -182,6 +182,7 @@ const state = {
   groupSearch: Array(NB_GROUPS).fill(""),
   groupsOpen: new Set([0]),
   groupMode: Array(NB_GROUPS).fill("or"),
+  noTag: new Set(),
   view: "table",
   visible: [],
   viewerIndex: -1,
@@ -350,14 +351,14 @@ function normalizeKey(s) { return s.trim().toLocaleUpperCase("fr").normalize("NF
 /* ---------- Filtrage ---------- */
 function applyFilter() {
   const active = [];
-  for (let g = 0; g < NB_GROUPS; g++) if (state.selected[g].size > 0) active.push(g);
+  for (let g = 0; g < NB_GROUPS; g++) if (state.selected[g].size > 0 || state.noTag.has(g)) active.push(g);
   if (active.length === 0) { state.visible = state.files.slice(); return; }
   state.visible = state.files.filter(f => {
     const groups = tagsOf(f.path);
     return active.every(g => {
       const sel = [...state.selected[g]];
       if (state.groupMode[g] === "and") return sel.every(t => groups[g].has(t));
-      return sel.some(t => groups[g].has(t));
+      return sel.some(t => groups[g].has(t)) || (state.noTag.has(g) && groups[g].size === 0);
     });
   });
 }
@@ -435,7 +436,7 @@ function makeGroupPanel(g) {
   clearBtn.className = "small";
   clearBtn.textContent = "Effacer la sélection";
   clearBtn.style.display = state.selected[g].size > 0 ? "" : "none";
-  clearBtn.onclick = () => { state.selected[g].clear(); render(); };
+  clearBtn.onclick = () => { state.selected[g].clear(); state.noTag.delete(g); render(); };
   tools.appendChild(clearBtn);
 
   if (g === 0) {
@@ -464,6 +465,17 @@ function makeGroupPanel(g) {
 
   function renderChips() {
     chips.innerHTML = "";
+    if (g === 0) {
+      const noTagChip = document.createElement("span");
+      noTagChip.className = "chip" + (state.noTag.has(0) ? " on" : "");
+      noTagChip.textContent = "(sans tag)";
+      noTagChip.title = "Fichiers sans aucun tag dans Tags 1";
+      noTagChip.onclick = () => {
+        state.noTag.has(0) ? state.noTag.delete(0) : state.noTag.add(0);
+        render();
+      };
+      chips.appendChild(noTagChip);
+    }
     const q = state.groupSearch[g].trim().toLocaleLowerCase("fr");
     const shown = g === 0 ? tags.filter(t => {
       const okLetter = state.letterSel[g] === null || normalizeKey(t) === state.letterSel[g];
