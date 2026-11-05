@@ -143,10 +143,10 @@
     <span class="vtitle" id="vTitle"></span>
     <div class="vnav">
       <button id="vPrev">⏮ Précédent</button>
-      <button class="seekbtn" id="vBack30" title="Reculer de 30 s (Maj+J)">« 30 s</button>
-      <button class="seekbtn" id="vBack15" title="Reculer de 15 s (J)">‹ 15 s</button>
-      <button class="seekbtn" id="vFwd15" title="Avancer de 15 s (L)">15 s ›</button>
-      <button class="seekbtn" id="vFwd30" title="Avancer de 30 s (Maj+L)">30 s »</button>
+      <button class="seekbtn" id="vBack30" title="Reculer de 30 s">« 30 s</button>
+      <button class="seekbtn" id="vBack15" title="Reculer de 10 s (←)">‹ 10 s</button>
+      <button class="seekbtn" id="vFwd15" title="Avancer de 10 s">10 s ›</button>
+      <button class="seekbtn" id="vFwd30" title="Avancer de 30 s (→)">30 s »</button>
       <button id="vNext">Suivant ⏭</button>
       <button id="vClose">✕ Fermer</button>
     </div>
@@ -758,16 +758,16 @@ $("vClose").onclick = closeViewer;
 $("vPrev").onclick = () => viewerStep(-1);
 $("vNext").onclick = () => viewerStep(1);
 $("vBack30").onclick = () => seekVideo(-30);
-$("vBack15").onclick = () => seekVideo(-15);
-$("vFwd15").onclick = () => seekVideo(15);
+$("vBack15").onclick = () => seekVideo(-10);
+$("vFwd15").onclick = () => seekVideo(10);
 $("vFwd30").onclick = () => seekVideo(30);
 document.addEventListener("keydown", e => {
   if (!$("viewer").classList.contains("open")) return;
   if (e.key === "Escape") closeViewer();
-  if (e.key === "ArrowLeft" && !e.shiftKey) viewerStep(-1);
-  if (e.key === "ArrowRight" && !e.shiftKey) viewerStep(1);
-  if (e.key === "j" || e.key === "J") seekVideo(e.shiftKey ? -30 : -15);
-  if (e.key === "l" || e.key === "L") seekVideo(e.shiftKey ? 30 : 15);
+  if (e.key === "ArrowLeft") seekVideo(-10);
+  if (e.key === "ArrowRight") seekVideo(30);
+  if (e.key === "ArrowUp") { e.preventDefault(); viewerStep(-1); }
+  if (e.key === "ArrowDown") { e.preventDefault(); viewerStep(1); }
 });
 
 const toggle = document.createElement("button");
