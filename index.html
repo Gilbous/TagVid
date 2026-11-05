@@ -26,29 +26,44 @@
   /* Barre de filtres */
   #filterBar { background: var(--panel); border: 1px solid #303641; border-radius: var(--radius); padding: 12px; margin-bottom: 16px; }
   #filterBar .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  #tagCloud { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-  .chip { border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; border: 1px solid #3a4150; background: var(--panel2); user-select: none; }
-  .chip.on { background: var(--accent); color: #0d1117; border-color: var(--accent2); font-weight: 600; }
   .mode { color: var(--muted); font-size: 13px; }
   #resultCount { color: var(--muted); font-size: 13px; margin-left: auto; }
+
+  /* Groupes de tags */
+  .group { border: 1px solid #303641; border-radius: var(--radius); margin-top: 10px; background: var(--panel2); }
+  .group > .ghead { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; user-select: none; font-weight: 600; font-size: 14px; }
+  .group > .ghead .cnt { color: var(--muted); font-weight: 400; font-size: 12px; }
+  .group > .ghead .arrow { color: var(--accent); font-size: 12px; width: 16px; display: inline-block; }
+  .group .gbody { padding: 0 12px 12px 12px; display: none; }
+  .group.open .gbody { display: block; }
+  .group .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .group .tools input { background: var(--bg); color: var(--text); border: 1px solid #3a4150; border-radius: 8px; padding: 5px 9px; font-size: 13px; width: 160px; }
+  .letters { display: flex; flex-wrap: wrap; gap: 3px; }
+  .letters span { min-width: 24px; text-align: center; padding: 3px 5px; font-size: 12px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; color: var(--muted); }
+  .letters span:hover { color: var(--text); border-color: #3a4150; }
+  .letters span.on { background: var(--accent); color: #0d1117; font-weight: 700; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; border: 1px solid #3a4150; background: var(--panel); user-select: none; }
+  .chip.on { background: var(--accent); color: #0d1117; border-color: var(--accent2); font-weight: 600; }
+  .hintline { font-size: 12px; color: var(--muted); }
 
   /* Listes */
   #fileList { width: 100%; border-collapse: collapse; font-size: 13px; }
   #fileList th, #fileList td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #2a303b; vertical-align: middle; }
   #fileList th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
   #fileList tr:hover td { background: #232833; }
-  .tagcell { display: flex; flex-wrap: wrap; gap: 4px; max-width: 420px; }
+  .tagcell { display: flex; flex-wrap: wrap; gap: 4px; max-width: 260px; }
   .tagpill { background: #2d3b52; color: var(--accent2); border-radius: 999px; padding: 2px 9px; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
   .tagpill span.x { cursor: pointer; color: var(--muted); font-weight: 700; }
   .tagpill span.x:hover { color: var(--danger); }
   .addtag { color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 6px; border: 1px dashed #3a4150; border-radius: 999px; }
   .addtag:hover { color: var(--accent); border-color: var(--accent); }
   .fname { cursor: pointer; color: var(--accent2); }
+  .fname:hover { text-decoration: underline; }
+  .fpath { color: var(--muted); }
   .dirrow td { background: #1b2029; font-weight: 600; cursor: pointer; user-select: none; }
   .dirrow:hover td { background: #232833; }
   .darrow { display: inline-block; width: 18px; color: var(--accent); font-size: 12px; }
-  .fname:hover { text-decoration: underline; }
-  .fpath { color: var(--muted); }
 
   /* Mosaïque */
   #mosaic { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
@@ -71,9 +86,11 @@
 
   .hidden { display: none !important; }
   #empty { color: var(--muted); padding: 40px; text-align: center; }
-  dialog { background: var(--panel); color: var(--text); border: 1px solid #343b47; border-radius: var(--radius); padding: 18px; min-width: 340px; }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid #343b47; border-radius: var(--radius); padding: 18px; min-width: 420px; max-width: 90vw; }
   dialog::backdrop { background: rgba(0,0,0,.6); }
   dialog input { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #3a4150; background: var(--bg); color: var(--text); font-size: 14px; }
+  dialog .grow { margin-top: 10px; }
+  dialog .grow label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
 </style>
 </head>
@@ -99,7 +116,7 @@
       <button class="small" id="btnClear">Effacer la sélection</button>
       <span id="resultCount"></span>
     </div>
-    <div id="tagCloud"></div>
+    <div id="groups"></div>
   </div>
 
   <div id="empty">Cliquez sur « Choisir le dossier racine » pour commencer.<br>
@@ -112,7 +129,7 @@
       <button class="small" id="btnCollapseAll">▸ Replier tout</button>
     </div>
     <table id="fileList">
-      <thead><tr><th>Nom</th><th>Taille</th><th>Tags</th></tr></thead>
+      <thead><tr><th>Nom</th><th>Taille</th><th>Groupe 1</th><th>Groupe 2</th><th>Groupe 3</th><th>Groupe 4</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -135,7 +152,10 @@
 <dialog id="tagDlg">
   <p style="margin-top:0;font-weight:600">Tags du fichier</p>
   <p id="tagDlgName" style="font-size:12px;color:var(--muted);word-break:break-all"></p>
-  <input id="tagDlgInput" placeholder="tags séparés par des virgules…" autofocus>
+  <div class="grow"><label>Groupe 1</label><input id="tagDlgIn0" placeholder="tags séparés par des virgules…"></div>
+  <div class="grow"><label>Groupe 2</label><input id="tagDlgIn1" placeholder="tags séparés par des virgules…"></div>
+  <div class="grow"><label>Groupe 3</label><input id="tagDlgIn2" placeholder="tags séparés par des virgules…"></div>
+  <div class="grow"><label>Groupe 4</label><input id="tagDlgIn3" placeholder="tags séparés par des virgules…"></div>
   <p class="hint">Exemple : vacances, 2024, famille</p>
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
     <button id="tagDlgCancel">Annuler</button>
@@ -147,20 +167,25 @@
 "use strict";
 
 const VIDEO_EXT = ["mp4","webm","mov","mkv","avi","m4v","ogv","ogg","mpg","mpeg","3gp","wmv","flv"];
+const NB_GROUPS = 4;
 const state = {
   root: null,
   files: [],        // {handle, path, name, dir, size, ext}
-  tags: new Map(),  // path -> Set
-  collapsed: new Set(),
-  selected: new Set(),
+  tags: new Map(),  // path -> [Set × NB_GROUPS]
+  selected: Array.from({length: NB_GROUPS}, () => new Set()),
+  letterSel: Array(NB_GROUPS).fill(null),
+  groupSearch: Array(NB_GROUPS).fill(""),
+  groupsOpen: new Set([0]),
   mode: "and",
-  view: "table",    // or "mosaic"
-  visible: [],      // filtered files
+  view: "table",
+  visible: [],
   viewerIndex: -1,
+  collapsed: new Set(),
 };
 
 const $ = id => document.getElementById(id);
 const status = msg => { $("status").textContent = msg; };
+const emptyGroups = () => Array.from({length: NB_GROUPS}, () => new Set());
 
 /* ---------- IndexedDB (tags + dossier racine + vignettes) ---------- */
 let db = null;
@@ -258,6 +283,7 @@ async function scanRoot() {
   $("filterBar").classList.remove("hidden");
   $("rootInfo").innerHTML = `Racine : <b>${escapeHtml(state.root.name)}</b> — ${state.files.length} fichiers (${vids} vidéos)`;
   render();
+  $("btnView").classList.remove("hidden");
 }
 
 async function walk(dir, prefix) {
@@ -280,34 +306,53 @@ async function walk(dir, prefix) {
   }
 }
 
-/* ---------- Tags ---------- */
+/* ---------- Tags (4 groupes) ---------- */
+function normalizeStored(v) {
+  // Ancien format : liste de chaînes -> groupe 1. Nouveau : tableau de 4 tableaux.
+  const groups = emptyGroups();
+  if (Array.isArray(v)) {
+    if (v.length > 0 && typeof v[0] === "string") {
+      for (const t of v) groups[0].add(t);
+    } else {
+      for (let g = 0; g < NB_GROUPS; g++) {
+        const arr = v[g];
+        if (Array.isArray(arr)) for (const t of arr) groups[g].add(String(t));
+      }
+    }
+  }
+  return groups;
+}
 async function loadTags() {
   const keys = await dbGetAll("tags");
   for (const k of keys) {
-    const v = await dbGet("tags", k);
-    state.tags.set(k, new Set(v || []));
+    state.tags.set(k, normalizeStored(await dbGet("tags", k)));
   }
 }
 async function saveTags(path) {
-  const set = state.tags.get(path);
-  if (!set || set.size === 0) await dbDelete("tags", path);
-  else await dbPut("tags", path, [...set]);
+  const groups = state.tags.get(path);
+  const empty = !groups || groups.every(s => s.size === 0);
+  if (empty) await dbDelete("tags", path);
+  else await dbPut("tags", path, groups.map(s => [...s]));
 }
-function tagsOf(path) { return state.tags.get(path) || new Set(); }
-function allTags() {
+function tagsOf(path) { return state.tags.get(path) || emptyGroups(); }
+function allTags(g) {
   const s = new Set();
-  for (const set of state.tags.values()) for (const t of set) s.add(t);
+  for (const groups of state.tags.values()) for (const t of groups[g]) s.add(t);
   return [...s].sort((a, b) => a.localeCompare(b, "fr"));
 }
+function normalizeKey(s) { return s.trim().toLocaleUpperCase("fr").normalize("NFD")[0] || "#"; }
 
 /* ---------- Filtrage ---------- */
 function applyFilter() {
-  const sel = state.selected;
-  if (sel.size === 0) { state.visible = state.files.slice(); return; }
+  const anySel = state.selected.some(s => s.size > 0);
+  if (!anySel) { state.visible = state.files.slice(); return; }
   state.visible = state.files.filter(f => {
-    const t = tagsOf(f.path);
-    if (state.mode === "and") return [...sel].every(x => t.has(x));
-    return [...sel].some(x => t.has(x));
+    const groups = tagsOf(f.path);
+    const checks = [];
+    for (let g = 0; g < NB_GROUPS; g++) {
+      for (const t of state.selected[g]) checks.push(groups[g].has(t));
+    }
+    return state.mode === "and" ? checks.every(Boolean) : checks.some(Boolean);
   });
 }
 
@@ -324,28 +369,96 @@ function fmtSize(n) {
 
 function render() {
   applyFilter();
-  renderTagCloud();
+  renderGroups();
   $("resultCount").textContent = `${state.visible.length} fichier(s) affiché(s)`;
   if (state.view === "table") renderTable(); else renderMosaic();
 }
 
-function renderTagCloud() {
-  const tags = allTags();
-  const cloud = $("tagCloud");
-  cloud.innerHTML = "";
-  for (const t of tags) {
-    const el = document.createElement("span");
-    el.className = "chip" + (state.selected.has(t) ? " on" : "");
-    el.textContent = t;
-    el.onclick = () => {
-      state.selected.has(t) ? state.selected.delete(t) : state.selected.add(t);
-      render();
-    };
-    cloud.appendChild(el);
-  }
-  if (tags.length === 0) cloud.innerHTML = '<span class="hint">Aucun tag défini pour l\'instant — ajoutez-en depuis la liste de fichiers.</span>';
+function renderGroups() {
+  const cont = $("groups");
+  cont.innerHTML = "";
+  for (let g = 0; g < NB_GROUPS; g++) cont.appendChild(makeGroupPanel(g));
 }
 
+function makeGroupPanel(g) {
+  const tags = allTags(g);
+  const panel = document.createElement("div");
+  panel.className = "group" + (state.groupsOpen.has(g) ? " open" : "");
+
+  const head = document.createElement("div");
+  head.className = "ghead";
+  const nSel = state.selected[g].size;
+  head.innerHTML = `<span class="arrow">${state.groupsOpen.has(g) ? "▾" : "▸"}</span>` +
+    `Groupe ${g + 1} <span class="cnt">${tags.length} tag(s)${nSel ? " — " + nSel + " sélectionné(s)" : ""}</span>`;
+  head.onclick = () => {
+    state.groupsOpen.has(g) ? state.groupsOpen.delete(g) : state.groupsOpen.add(g);
+    renderGroups();
+  };
+  panel.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "gbody";
+
+  const tools = document.createElement("div");
+  tools.className = "tools";
+  const search = document.createElement("input");
+  search.type = "search";
+  search.placeholder = "Rechercher un tag…";
+  search.value = state.groupSearch[g];
+  search.oninput = () => { state.groupSearch[g] = search.value; renderChips(); };
+  tools.appendChild(search);
+
+  const letters = document.createElement("div");
+  letters.className = "letters";
+  const present = new Set(tags.map(normalizeKey));
+  const letterList = ["Tous", ...[...present].sort((a, b) => a.localeCompare(b, "fr"))];
+  for (const L of letterList) {
+    const s = document.createElement("span");
+    s.textContent = L;
+    const isOn = L === "Tous" ? state.letterSel[g] === null : state.letterSel[g] === L;
+    if (isOn) s.classList.add("on");
+    s.onclick = () => {
+      state.letterSel[g] = L === "Tous" ? null : L;
+      renderGroups();
+    };
+    letters.appendChild(s);
+  }
+  tools.appendChild(letters);
+  body.appendChild(tools);
+
+  const chips = document.createElement("div");
+  chips.className = "chips";
+  body.appendChild(chips);
+
+  function renderChips() {
+    chips.innerHTML = "";
+    const q = state.groupSearch[g].trim().toLocaleLowerCase("fr");
+    const shown = tags.filter(t => {
+      const okLetter = state.letterSel[g] === null || normalizeKey(t) === state.letterSel[g];
+      const okSearch = !q || t.toLocaleLowerCase("fr").includes(q);
+      return okLetter && okSearch;
+    });
+    if (shown.length === 0) {
+      chips.innerHTML = `<span class="hintline">${tags.length === 0 ? "Aucun tag dans ce groupe." : "Aucun tag ne correspond."}</span>`;
+      return;
+    }
+    for (const t of shown) {
+      const el = document.createElement("span");
+      el.className = "chip" + (state.selected[g].has(t) ? " on" : "");
+      el.textContent = t;
+      el.onclick = () => {
+        state.selected[g].has(t) ? state.selected[g].delete(t) : state.selected[g].add(t);
+        render();
+      };
+      chips.appendChild(el);
+    }
+  }
+  renderChips();
+  panel.appendChild(body);
+  return panel;
+}
+
+/* ---------- Vue liste (arborescence dépliable) ---------- */
 function buildTree(files) {
   const root = { name: "", path: "", dirs: new Map(), files: [] };
   for (const f of files) {
@@ -392,7 +505,7 @@ function renderDir(node, depth, tb) {
     const tr = document.createElement("tr");
     tr.className = "dirrow";
     const td = document.createElement("td");
-    td.colSpan = 3;
+    td.colSpan = 2 + NB_GROUPS;
     td.style.paddingLeft = (10 + depth * 18) + "px";
     const arrow = document.createElement("span");
     arrow.className = "darrow";
@@ -425,30 +538,42 @@ function renderDir(node, depth, tb) {
     const tdSize = document.createElement("td");
     tdSize.textContent = fmtSize(f.size);
 
-    const tdTags = document.createElement("td");
-    const cell = document.createElement("div");
-    cell.className = "tagcell";
-    for (const t of tagsOf(f.path)) {
-      const pill = document.createElement("span");
-      pill.className = "tagpill";
-      pill.textContent = t;
-      const x = document.createElement("span");
-      x.className = "x"; x.textContent = "✕"; x.title = "Retirer ce tag";
-      x.onclick = async () => { tagsOf(f.path).delete(t); await saveTags(f.path); render(); };
-      pill.appendChild(x);
-      cell.appendChild(pill);
-    }
-    const add = document.createElement("span");
-    add.className = "addtag"; add.textContent = "+ tag";
-    add.onclick = () => openTagDialog(f);
-    cell.appendChild(add);
-    tdTags.appendChild(cell);
-
-    tr.append(tdName, tdSize, tdTags);
+    tr.append(tdName, tdSize);
+    const groups = tagsOf(f.path);
+    for (let g = 0; g < NB_GROUPS; g++) tr.appendChild(makeTagCell(f, groups[g]));
     tb.appendChild(tr);
   }
 }
 
+function makeTagCell(f, groupSet) {
+  const td = document.createElement("td");
+  const cell = document.createElement("div");
+  cell.className = "tagcell";
+  for (const t of groupSet) {
+    const pill = document.createElement("span");
+    pill.className = "tagpill";
+    pill.textContent = t;
+    const x = document.createElement("span");
+    x.className = "x"; x.textContent = "✕"; x.title = "Retirer ce tag";
+    x.onclick = async e => {
+      e.stopPropagation();
+      const groups = tagsOf(f.path);
+      for (const s of groups) s.delete(t);
+      await saveTags(f.path);
+      render();
+    };
+    pill.appendChild(x);
+    cell.appendChild(pill);
+  }
+  const add = document.createElement("span");
+  add.className = "addtag"; add.textContent = "+ tag";
+  add.onclick = e => { e.stopPropagation(); openTagDialog(f); };
+  cell.appendChild(add);
+  td.appendChild(cell);
+  return td;
+}
+
+/* ---------- Mosaïque ---------- */
 function renderMosaic() {
   $("tableView").classList.add("hidden");
   const mosaic = $("mosaic");
@@ -472,14 +597,15 @@ function makeTile(f) {
   tile.insertAdjacentHTML("beforeend", '<div class="play">▶</div>');
   const cap = document.createElement("div");
   cap.className = "cap";
-  cap.innerHTML = `<div class="t">${escapeHtml(f.name)}</div><div class="tags">${escapeHtml([...tagsOf(f.path)].join(", "))}</div>`;
+  const all = tagsOf(f.path).flatMap(s => [...s]);
+  cap.innerHTML = `<div class="t">${escapeHtml(f.name)}</div><div class="tags">${escapeHtml(all.join(", "))}</div>`;
   tile.appendChild(cap);
   tile.onclick = () => openViewer(f);
   generateThumb(f, thumb);
   return tile;
 }
 
-/* ---------- Vignettes vidéo (capture via canvas, mise en cache) ---------- */
+/* ---------- Vignettes vidéo ---------- */
 async function generateThumb(f, el) {
   const cached = await dbGet("thumbs", f.path);
   if (cached) { el.innerHTML = `<img src="${cached}" alt="">`; return; }
@@ -513,14 +639,18 @@ let dlgFile = null;
 function openTagDialog(f) {
   dlgFile = f;
   $("tagDlgName").textContent = f.path;
-  $("tagDlgInput").value = [...tagsOf(f.path)].join(", ");
+  const groups = tagsOf(f.path);
+  for (let g = 0; g < NB_GROUPS; g++) $("tagDlgIn" + g).value = [...groups[g]].join(", ");
   $("tagDlg").showModal();
-  $("tagDlgInput").focus();
+  $("tagDlgIn0").focus();
 }
 async function submitTagDialog() {
   if (!dlgFile) return;
-  const parts = $("tagDlgInput").value.split(",").map(s => s.trim()).filter(Boolean);
-  state.tags.set(dlgFile.path, new Set(parts));
+  const groups = emptyGroups();
+  for (let g = 0; g < NB_GROUPS; g++) {
+    for (const t of $("tagDlgIn" + g).value.split(",").map(s => s.trim()).filter(Boolean)) groups[g].add(t);
+  }
+  state.tags.set(dlgFile.path, groups);
   await saveTags(dlgFile.path);
   $("tagDlg").close();
   render();
@@ -564,7 +694,7 @@ function closeViewer() {
 /* ---------- Import / export ---------- */
 function exportTags() {
   const obj = {};
-  for (const [k, v] of state.tags) obj[k] = [...v];
+  for (const [k, v] of state.tags) obj[k] = v.map(s => [...s]);
   const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -575,7 +705,7 @@ function exportTags() {
 async function importTags(file) {
   const obj = JSON.parse(await file.text());
   for (const [k, v] of Object.entries(obj)) {
-    state.tags.set(k, new Set(Array.isArray(v) ? v.map(String) : []));
+    state.tags.set(k, normalizeStored(v));
     await saveTags(k);
   }
   render();
@@ -588,12 +718,14 @@ $("btnExport").onclick = exportTags;
 $("btnImport").onclick = () => $("importFile").click();
 $("importFile").onchange = e => { if (e.target.files[0]) importTags(e.target.files[0]).catch(err => alert("Import impossible : " + err.message)); };
 document.querySelectorAll('input[name="mode"]').forEach(r => r.onchange = () => { state.mode = r.value; render(); });
-$("btnClear").onclick = () => { state.selected.clear(); render(); };
+$("btnClear").onclick = () => { state.selected = Array.from({length: NB_GROUPS}, () => new Set()); render(); };
 $("btnExpandAll").onclick = () => { state.collapsed.clear(); persistCollapsed(); render(); };
 $("btnCollapseAll").onclick = () => { state.collapsed = allDirPaths(); persistCollapsed(); render(); };
 $("tagDlgOk").onclick = submitTagDialog;
 $("tagDlgCancel").onclick = () => $("tagDlg").close();
-$("tagDlgInput").addEventListener("keydown", e => { if (e.key === "Enter") submitTagDialog(); });
+for (let g = 0; g < NB_GROUPS; g++) {
+  $("tagDlgIn" + g).addEventListener("keydown", e => { if (e.key === "Enter") submitTagDialog(); });
+}
 $("vClose").onclick = closeViewer;
 $("vPrev").onclick = () => viewerStep(-1);
 $("vNext").onclick = () => viewerStep(1);
@@ -604,7 +736,6 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowRight") viewerStep(1);
 });
 
-/* Bascule tableau ⇄ mosaïque */
 const toggle = document.createElement("button");
 toggle.id = "btnView";
 toggle.textContent = "🖼 Vue mosaïque";
@@ -614,11 +745,6 @@ toggle.onclick = () => {
   state.view = state.view === "table" ? "mosaic" : "table";
   toggle.textContent = state.view === "table" ? "🖼 Vue mosaïque" : "📋 Vue liste";
   render();
-};
-const originalScan = scanRoot;
-scanRoot = async function () {
-  await originalScan();
-  toggle.classList.remove("hidden");
 };
 
 /* ---------- Démarrage ---------- */
@@ -631,7 +757,6 @@ scanRoot = async function () {
   await openDB();
   await loadTags();
   state.collapsed = new Set((await dbGet("meta", "collapsed")) || []);
-  status("");
   const ok = await restoreRoot().catch(() => false);
   if (!ok) status("");
 })();
