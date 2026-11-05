@@ -80,9 +80,12 @@
   #viewer { display: none; position: fixed; inset: 0; background: rgba(5,7,10,.92); z-index: 50; flex-direction: column; }
   #viewer.open { display: flex; }
   #viewer .vhead { display: flex; align-items: center; gap: 12px; padding: 12px 18px; }
+  #viewer { position: fixed; }
+  #viewer .vwrap { position: relative; display: flex; flex: 1; min-height: 0; }
   #viewer .vtitle { font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #viewer video { flex: 1; width: 100%; min-height: 0; background: #000; outline: none; }
   #viewer .vnav { display: flex; gap: 8px; }
+  #viewer .seekbtn { background: #171a20; font-size: 13px; }
 
   .hidden { display: none !important; }
   #empty { color: var(--muted); padding: 40px; text-align: center; }
@@ -140,11 +143,15 @@
     <span class="vtitle" id="vTitle"></span>
     <div class="vnav">
       <button id="vPrev">⏮ Précédent</button>
+      <button class="seekbtn" id="vBack30" title="Reculer de 30 s (Maj+J)">« 30 s</button>
+      <button class="seekbtn" id="vBack15" title="Reculer de 15 s (J)">‹ 15 s</button>
+      <button class="seekbtn" id="vFwd15" title="Avancer de 15 s (L)">15 s ›</button>
+      <button class="seekbtn" id="vFwd30" title="Avancer de 30 s (Maj+L)">30 s »</button>
       <button id="vNext">Suivant ⏭</button>
       <button id="vClose">✕ Fermer</button>
     </div>
   </div>
-  <video id="vVideo" controls autoplay></video>
+  <div class="vwrap"><video id="vVideo" controls autoplay></video></div>
 </div>
 
 <dialog id="tagDlg">
@@ -687,6 +694,26 @@ function viewerStep(d) {
   state.viewerIndex = (state.viewerIndex + d + vids.length) % vids.length;
   playCurrent();
 }
+function seekVideo(sec) {
+  const v = $("vVideo");
+  if (!v.src) return;
+  v.currentTime = Math.max(0, Math.min((v.duration || Infinity) - 0.01, v.currentTime + sec));
+  flashSeek(sec);
+}
+function flashSeek(sec) {
+  const v = $("vVideo");
+  let f = document.getElementById("seekFlash");
+  if (!f) {
+    f = document.createElement("div");
+    f.id = "seekFlash";
+    f.style.cssText = "position:absolute;top:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;padding:6px 14px;border-radius:999px;font-size:14px;font-weight:600;pointer-events:none;opacity:0;transition:opacity .25s";
+    v.parentElement.appendChild(f);
+  }
+  f.textContent = (sec > 0 ? "+" : "") + sec + " s";
+  f.style.opacity = "1";
+  clearTimeout(f._t);
+  f._t = setTimeout(() => { f.style.opacity = "0"; }, 600);
+}
 function closeViewer() {
   $("vVideo").pause();
   $("vVideo").src = "";
@@ -730,11 +757,17 @@ for (let g = 0; g < NB_GROUPS; g++) {
 $("vClose").onclick = closeViewer;
 $("vPrev").onclick = () => viewerStep(-1);
 $("vNext").onclick = () => viewerStep(1);
+$("vBack30").onclick = () => seekVideo(-30);
+$("vBack15").onclick = () => seekVideo(-15);
+$("vFwd15").onclick = () => seekVideo(15);
+$("vFwd30").onclick = () => seekVideo(30);
 document.addEventListener("keydown", e => {
   if (!$("viewer").classList.contains("open")) return;
   if (e.key === "Escape") closeViewer();
-  if (e.key === "ArrowLeft") viewerStep(-1);
-  if (e.key === "ArrowRight") viewerStep(1);
+  if (e.key === "ArrowLeft" && !e.shiftKey) viewerStep(-1);
+  if (e.key === "ArrowRight" && !e.shiftKey) viewerStep(1);
+  if (e.key === "j" || e.key === "J") seekVideo(e.shiftKey ? -30 : -15);
+  if (e.key === "l" || e.key === "L") seekVideo(e.shiftKey ? 30 : 15);
 });
 
 const toggle = document.createElement("button");
