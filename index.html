@@ -89,6 +89,8 @@
   #viewer .stars { display: flex; gap: 2px; margin: 0 4px; font-size: 20px; }
   #viewer .stars span { cursor: pointer; color: #4a5160; user-select: none; }
   #viewer .stars span.on { color: #ffd24a; }
+  .stars-inline { letter-spacing: 1px; color: #4a5160; font-size: 14px; white-space: nowrap; }
+  .stars-inline .on { color: #ffd24a; }
 
   .hidden { display: none !important; }
   #empty { color: var(--muted); padding: 40px; text-align: center; }
@@ -118,6 +120,11 @@
     <div class="row">
       <span style="font-weight:600">Filtrer par tags :</span>
       <span class="hintline">Tags 1 : OU — groupes entre eux : ET — Tags 2-4 : OU ou ET au choix</span>
+      <span class="hintline" style="display:flex;align-items:center;gap:5px">
+        Vote :
+        <span id="voteChips" class="chips"></span>
+      </span>
+      <label class="mode"><input type="checkbox" id="sortRating"> Trier par vote ↓</label>
       <span id="resultCount"></span>
     </div>
     <div id="groups"></div>
@@ -133,7 +140,7 @@
       <button class="small" id="btnCollapseAll">▸ Replier tout</button>
     </div>
     <table id="fileList">
-      <thead><tr><th>Nom</th><th>Taille</th><th>Tags 1</th><th>Tags 2</th><th>Tags 3</th><th>Tags 4</th></tr></thead>
+      <thead><tr><th>Nom</th><th>Taille</th><th>Vote</th><th>Tags 1</th><th>Tags 2</th><th>Tags 3</th><th>Tags 4</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -189,6 +196,8 @@ const state = {
   groupMode: Array(NB_GROUPS).fill("or"),
   noTag: new Set(),
   ratings: new Map(),
+  minRating: 0,
+  sortByRating: false,
   view: "table",
   visible: [],
   viewerIndex: -1,
@@ -371,14 +380,26 @@ function normalizeKey(s) { return s.trim().toLocaleUpperCase("fr").normalize("NF
 function applyFilter() {
   const active = [];
   for (let g = 0; g < NB_GROUPS; g++) if (state.selected[g].size > 0 || state.noTag.has(g)) active.push(g);
-  if (active.length === 0) { state.visible = state.files.slice(); return; }
+  if (active.length === 0 && state.minRating === 0) { state.visible = state.files.slice(); sortVisible(); return; }
   state.visible = state.files.filter(f => {
+    if (state.minRating > 0 && (state.ratings.get(f.path) || 0) < state.minRating) return false;
+    if (active.length === 0) return true;
     const groups = tagsOf(f.path);
     return active.every(g => {
       const sel = [...state.selected[g]];
       if (state.groupMode[g] === "and") return sel.every(t => groups[g].has(t));
       return sel.some(t => groups[g].has(t)) || (state.noTag.has(g) && groups[g].size === 0);
     });
+  });
+  sortVisible();
+}
+function sortVisible() {
+  if (!state.sortByRating) return;
+  state.visible.sort((a, b) => {
+    const ra = state.ratings.get(a.path) || 0;
+    const rb = state.ratings.get(b.path) || 0;
+    if (rb !== ra) return rb - ra;
+    return a.path.localeCompare(b.path, "fr", { numeric: true });
   });
 }
 
@@ -393,11 +414,32 @@ function fmtSize(n) {
   return n.toFixed(i === 0 ? 0 : 1) + " " + u[i];
 }
 
+function starsHTML(n, max) {
+  let s = "";
+  for (let i = 1; i <= max; i++) s += `<span class="${i <= n ? "on" : ""}">★</span>`;
+  return `<span class="stars-inline">${s}</span>`;
+}
+
 function render() {
   applyFilter();
   renderGroups();
+  renderVoteChips();
   $("resultCount").textContent = `${state.visible.length} fichier(s) affiché(s)`;
   if (state.view === "table") renderTable(); else renderMosaic();
+}
+
+function renderVoteChips() {
+  const cont = $("voteChips");
+  cont.innerHTML = "";
+  const opts = [0, 1, 2, 3, 4, 5];
+  for (const n of opts) {
+    const el = document.createElement("span");
+    el.className = "chip" + (state.minRating === n ? " on" : "");
+    el.textContent = n === 0 ? "toutes" : "★".repeat(n) + "+";
+    el.title = n === 0 ? "Toutes les vidéos" : n + " étoiles et plus";
+    el.onclick = () => { state.minRating = n; render(); };
+    cont.appendChild(el);
+  }
 }
 
 function renderGroups() {
@@ -568,7 +610,7 @@ function renderDir(node, depth, tb) {
     const tr = document.createElement("tr");
     tr.className = "dirrow";
     const td = document.createElement("td");
-    td.colSpan = 2 + NB_GROUPS;
+    td.colSpan = 3 + NB_GROUPS;
     td.style.paddingLeft = (10 + depth * 18) + "px";
     const arrow = document.createElement("span");
     arrow.className = "darrow";
@@ -601,7 +643,10 @@ function renderDir(node, depth, tb) {
     const tdSize = document.createElement("td");
     tdSize.textContent = fmtSize(f.size);
 
-    tr.append(tdName, tdSize);
+    const tdVote = document.createElement("td");
+    tdVote.innerHTML = starsHTML(state.ratings.get(f.path) || 0, 5);
+
+    tr.append(tdName, tdSize, tdVote);
     const groups = tagsOf(f.path);
     for (let g = 0; g < NB_GROUPS; g++) tr.appendChild(makeTagCell(f, groups[g]));
     tb.appendChild(tr);
@@ -661,7 +706,9 @@ function makeTile(f) {
   const cap = document.createElement("div");
   cap.className = "cap";
   const all = tagsOf(f.path).flatMap(s => [...s]);
-  cap.innerHTML = `<div class="t">${escapeHtml(f.name)}</div><div class="tags">${escapeHtml(all.join(", "))}</div>`;
+  cap.innerHTML = `<div class="t">${escapeHtml(f.name)}</div>` +
+    `<div style="margin-top:3px">${starsHTML(state.ratings.get(f.path) || 0, 5)}</div>` +
+    `<div class="tags">${escapeHtml(all.join(", "))}</div>`;
   tile.appendChild(cap);
   tile.onclick = () => openViewer(f);
   generateThumb(f, thumb);
@@ -818,6 +865,7 @@ $("btnRescan").onclick = scanRoot;
 $("btnExport").onclick = exportTags;
 $("btnImport").onclick = () => $("importFile").click();
 $("importFile").onchange = e => { if (e.target.files[0]) importTags(e.target.files[0]).catch(err => alert("Import impossible : " + err.message)); };
+$("sortRating").onchange = e => { state.sortByRating = e.target.checked; render(); };
 $("btnExpandAll").onclick = () => { state.collapsed.clear(); persistCollapsed(); render(); };
 $("btnCollapseAll").onclick = () => { state.collapsed = allDirPaths(); persistCollapsed(); render(); };
 $("tagDlgOk").onclick = submitTagDialog;
