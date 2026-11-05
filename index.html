@@ -84,8 +84,11 @@
   #viewer .vwrap { position: relative; display: flex; flex: 1; min-height: 0; }
   #viewer .vtitle { font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #viewer video { flex: 1; width: 100%; min-height: 0; background: #000; outline: none; }
-  #viewer .vnav { display: flex; gap: 8px; }
+  #viewer .vnav { display: flex; gap: 8px; align-items: center; }
   #viewer .seekbtn { background: #171a20; font-size: 13px; }
+  #viewer .stars { display: flex; gap: 2px; margin: 0 4px; font-size: 20px; }
+  #viewer .stars span { cursor: pointer; color: #4a5160; user-select: none; }
+  #viewer .stars span.on { color: #ffd24a; }
 
   .hidden { display: none !important; }
   #empty { color: var(--muted); padding: 40px; text-align: center; }
@@ -142,6 +145,8 @@
   <div class="vhead">
     <span class="vtitle" id="vTitle"></span>
     <div class="vnav">
+      <span class="stars" id="vStars" title="Voter : cliquez sur une étoile (recliquez pour retirer)"></span>
+      <button id="vTags">🏷 Tags</button>
       <button id="vPrev">⏮ Précédent</button>
       <button class="seekbtn" id="vBack30" title="Reculer de 30 s">« 30 s</button>
       <button class="seekbtn" id="vBack15" title="Reculer de 10 s (←)">‹ 10 s</button>
@@ -183,6 +188,7 @@ const state = {
   groupsOpen: new Set([0]),
   groupMode: Array(NB_GROUPS).fill("or"),
   noTag: new Set(),
+  ratings: new Map(),
   view: "table",
   visible: [],
   viewerIndex: -1,
@@ -197,12 +203,13 @@ const emptyGroups = () => Array.from({length: NB_GROUPS}, () => new Set());
 let db = null;
 function openDB() {
   return new Promise((res, rej) => {
-    const rq = indexedDB.open("tagvid", 1);
+    const rq = indexedDB.open("tagvid", 2);
     rq.onupgradeneeded = () => {
       const d = rq.result;
       if (!d.objectStoreNames.contains("tags")) d.createObjectStore("tags");
       if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
       if (!d.objectStoreNames.contains("thumbs")) d.createObjectStore("thumbs");
+      if (!d.objectStoreNames.contains("ratings")) d.createObjectStore("ratings");
     };
     rq.onsuccess = () => { db = rq.result; res(db); };
     rq.onerror = () => rej(rq.error);
@@ -333,6 +340,18 @@ async function loadTags() {
   for (const k of keys) {
     state.tags.set(k, normalizeStored(await dbGet("tags", k)));
   }
+}
+async function loadRatings() {
+  const keys = await dbGetAll("ratings");
+  for (const k of keys) {
+    const v = await dbGet("ratings", k);
+    if (v >= 1 && v <= 5) state.ratings.set(k, v);
+  }
+}
+async function setRating(path, n) {
+  if (n === null) { state.ratings.delete(path); await dbDelete("ratings", path); }
+  else { state.ratings.set(path, n); await dbPut("ratings", path, n); }
+  updateStars();
 }
 async function saveTags(path) {
   const groups = state.tags.get(path);
@@ -721,6 +740,24 @@ async function playCurrent() {
   $("vTitle").textContent = f.path;
   $("vVideo").src = currentUrl;
   $("vVideo").play().catch(() => {});
+  updateStars();
+}
+function currentVideoFile() {
+  return visibleVideos()[state.viewerIndex] || null;
+}
+function updateStars() {
+  const f = currentVideoFile();
+  const cont = $("vStars");
+  cont.innerHTML = "";
+  if (!f) return;
+  const cur = state.ratings.get(f.path) || 0;
+  for (let i = 1; i <= 5; i++) {
+    const s = document.createElement("span");
+    s.textContent = "★";
+    if (i <= cur) s.classList.add("on");
+    s.onclick = () => setRating(f.path, i === cur ? null : i);
+    cont.appendChild(s);
+  }
 }
 function viewerStep(d) {
   const vids = visibleVideos();
@@ -789,6 +826,7 @@ for (let g = 0; g < NB_GROUPS; g++) {
   $("tagDlgIn" + g).addEventListener("keydown", e => { if (e.key === "Enter") submitTagDialog(); });
 }
 $("vClose").onclick = closeViewer;
+$("vTags").onclick = () => { const f = currentVideoFile(); if (f) openTagDialog(f); };
 $("vPrev").onclick = () => viewerStep(-1);
 $("vNext").onclick = () => viewerStep(1);
 $("vBack30").onclick = () => seekVideo(-30);
@@ -824,6 +862,7 @@ toggle.onclick = () => {
   }
   await openDB();
   await loadTags();
+  await loadRatings();
   state.collapsed = new Set((await dbGet("meta", "collapsed")) || []);
   const ok = await restoreRoot().catch(() => false);
   if (!ok) status("");
