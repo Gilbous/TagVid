@@ -108,6 +108,7 @@
   <button class="primary" id="btnPick">Choisir le dossier racine</button>
   <button id="btnRescan" class="hidden">Recharger l'arborescence</button>
   <button id="btnExport" class="hidden">Exporter les tags (JSON)</button>
+  <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
@@ -252,6 +253,10 @@ function dbDelete(store, key) {
     tx.oncomplete = res; tx.onerror = () => rej(tx.error);
   });
 }
+async function dbClear(store) {
+  const keys = await dbGetAll(store);
+  await Promise.all(keys.map(k => dbDelete(store, k)));
+}
 
 /* ---------- Choix du dossier racine ---------- */
 async function pickRoot() {
@@ -302,6 +307,7 @@ async function scanRoot() {
   $("btnRescan").classList.remove("hidden");
   $("btnExport").classList.remove("hidden");
   $("btnImport").classList.remove("hidden");
+  $("btnThumbs").classList.remove("hidden");
   $("filterBar").classList.remove("hidden");
   $("rootInfo").innerHTML = `Racine : <b>${escapeHtml(state.root.name)}</b> — ${state.files.length} fichiers (${vids} vidéos)`;
   render();
@@ -715,7 +721,25 @@ function makeTile(f) {
   return tile;
 }
 
-/* ---------- Vignettes vidéo ---------- */
+/* ---------- Vignettes vidéo (intelligentes : frame la plus lumineuse parmi 1/3/5/7/9 s) ---------- */
+function seekTo(video, t) {
+  return new Promise((res, rej) => {
+    const to = setTimeout(rej, 5000);
+    video.onseeked = () => { clearTimeout(to); video.onseeked = null; res(); };
+    video.onerror = () => { clearTimeout(to); rej(new Error("video")); };
+    video.currentTime = t;
+  });
+}
+function frameLuminance(video) {
+  const c = document.createElement("canvas");
+  c.width = 48; c.height = 27;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(video, 0, 0, c.width, c.height);
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+  return sum / (d.length / 4);
+}
 async function generateThumb(f, el) {
   const cached = await dbGet("thumbs", f.path);
   if (cached) { el.innerHTML = `<img src="${cached}" alt="">`; return; }
@@ -725,11 +749,20 @@ async function generateThumb(f, el) {
     const video = document.createElement("video");
     video.muted = true; video.preload = "metadata"; video.src = url;
     await new Promise((res, rej) => {
-      video.onloadeddata = () => { video.currentTime = Math.min(1, (video.duration || 2) / 3); };
-      video.onseeked = res;
+      video.onloadeddata = res;
       video.onerror = rej;
-      setTimeout(rej, 8000);
+      setTimeout(rej, 10000);
     });
+    const candidates = [1, 3, 5, 7, 9].filter(t => t < (video.duration || Infinity) - 0.1);
+    let bestT = candidates[0] ?? 0, bestLum = -1;
+    for (const t of candidates) {
+      try {
+        await seekTo(video, t);
+        const lum = frameLuminance(video);
+        if (lum > bestLum) { bestLum = lum; bestT = t; }
+      } catch (e) { break; }
+    }
+    if (bestLum >= 0) await seekTo(video, bestT);
     const canvas = document.createElement("canvas");
     const w = 320;
     canvas.width = w;
@@ -863,6 +896,13 @@ async function importTags(file) {
 $("btnPick").onclick = pickRoot;
 $("btnRescan").onclick = scanRoot;
 $("btnExport").onclick = exportTags;
+$("btnThumbs").onclick = async () => {
+  if (!confirm("Supprimer toutes les vignettes en cache et les recalculer ?")) return;
+  status("Purge des vignettes…");
+  await dbClear("thumbs");
+  status("");
+  render();
+};
 $("btnImport").onclick = () => $("importFile").click();
 $("importFile").onchange = e => { if (e.target.files[0]) importTags(e.target.files[0]).catch(err => alert("Import impossible : " + err.message)); };
 $("sortRating").onchange = e => { state.sortByRating = e.target.checked; render(); };
