@@ -44,6 +44,9 @@
   .addtag { color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 6px; border: 1px dashed #3a4150; border-radius: 999px; }
   .addtag:hover { color: var(--accent); border-color: var(--accent); }
   .fname { cursor: pointer; color: var(--accent2); }
+  .dirrow td { background: #1b2029; font-weight: 600; cursor: pointer; user-select: none; }
+  .dirrow:hover td { background: #232833; }
+  .darrow { display: inline-block; width: 18px; color: var(--accent); font-size: 12px; }
   .fname:hover { text-decoration: underline; }
   .fpath { color: var(--muted); }
 
@@ -105,7 +108,7 @@
 
   <div id="tableView" class="hidden">
     <table id="fileList">
-      <thead><tr><th>Nom</th><th>Dossier</th><th>Taille</th><th>Tags</th></tr></thead>
+      <thead><tr><th>Nom</th><th>Taille</th><th>Tags</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -144,6 +147,7 @@ const state = {
   root: null,
   files: [],        // {handle, path, name, dir, size, ext}
   tags: new Map(),  // path -> Set
+  collapsed: new Set(),
   selected: new Set(),
   mode: "and",
   view: "table",    // or "mosaic"
@@ -338,22 +342,73 @@ function renderTagCloud() {
   if (tags.length === 0) cloud.innerHTML = '<span class="hint">Aucun tag défini pour l\'instant — ajoutez-en depuis la liste de fichiers.</span>';
 }
 
+function buildTree(files) {
+  const root = { name: "", path: "", dirs: new Map(), files: [] };
+  for (const f of files) {
+    const parts = f.path.split("/");
+    let node = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const p = parts.slice(0, i + 1).join("/") + "/";
+      if (!node.dirs.has(parts[i])) node.dirs.set(parts[i], { name: parts[i], path: p, dirs: new Map(), files: [] });
+      node = node.dirs.get(parts[i]);
+    }
+    node.files.push(f);
+  }
+  return root;
+}
+function countFiles(node) {
+  let n = node.files.length;
+  for (const d of node.dirs.values()) n += countFiles(d);
+  return n;
+}
+async function persistCollapsed() {
+  try { await dbPut("meta", "collapsed", [...state.collapsed]); } catch (e) {}
+}
+
 function renderTable() {
   $("mosaic").classList.add("hidden");
   $("tableView").classList.remove("hidden");
   const tb = $("fileList").tBodies[0];
   tb.innerHTML = "";
-  for (const f of state.visible) {
+  renderDir(buildTree(state.visible), 0, tb);
+}
+
+function renderDir(node, depth, tb) {
+  const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  for (const d of dirs) {
+    const collapsed = state.collapsed.has(d.path);
+    const tr = document.createElement("tr");
+    tr.className = "dirrow";
+    const td = document.createElement("td");
+    td.colSpan = 3;
+    td.style.paddingLeft = (10 + depth * 18) + "px";
+    const arrow = document.createElement("span");
+    arrow.className = "darrow";
+    arrow.textContent = collapsed ? "▸" : "▾";
+    const nm = document.createElement("span");
+    nm.textContent = "📁 " + d.name;
+    const cnt = document.createElement("span");
+    cnt.className = "fpath";
+    cnt.textContent = " (" + countFiles(d) + ")";
+    td.append(arrow, nm, cnt);
+    tr.appendChild(td);
+    tb.appendChild(tr);
+    tr.onclick = () => {
+      collapsed ? state.collapsed.delete(d.path) : state.collapsed.add(d.path);
+      persistCollapsed();
+      render();
+    };
+    if (!collapsed) renderDir(d, depth + 1, tb);
+  }
+  for (const f of node.files) {
     const tr = document.createElement("tr");
 
     const tdName = document.createElement("td");
+    tdName.style.paddingLeft = (28 + depth * 18) + "px";
     const a = document.createElement("span");
     a.className = "fname"; a.textContent = f.name;
     a.onclick = () => openViewer(f);
     tdName.appendChild(a);
-
-    const tdDir = document.createElement("td");
-    tdDir.className = "fpath"; tdDir.textContent = f.dir || "racine";
 
     const tdSize = document.createElement("td");
     tdSize.textContent = fmtSize(f.size);
@@ -377,7 +432,7 @@ function renderTable() {
     cell.appendChild(add);
     tdTags.appendChild(cell);
 
-    tr.append(tdName, tdDir, tdSize, tdTags);
+    tr.append(tdName, tdSize, tdTags);
     tb.appendChild(tr);
   }
 }
@@ -561,6 +616,7 @@ scanRoot = async function () {
   }
   await openDB();
   await loadTags();
+  state.collapsed = new Set((await dbGet("meta", "collapsed")) || []);
   status("");
   const ok = await restoreRoot().catch(() => false);
   if (!ok) status("");
