@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TagVid — Tagueur et visionneuse vidéo</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1e2229; --panel2: #262b34; --text: #e8eaed;
+    --muted: #9aa1ad; --accent: #5b9cff; --accent2: #7ec8ff; --danger: #ff6b6b;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 14px 20px; background: var(--panel); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border-bottom: 1px solid #303641; }
+  header h1 { font-size: 18px; margin: 0 16px 0 0; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid #343b47; border-radius: var(--radius); padding: 8px 14px; cursor: pointer; font-size: 14px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+  button.small { padding: 4px 10px; font-size: 12px; }
+  #status { color: var(--muted); font-size: 13px; }
+  main { padding: 16px 20px; }
+  #rootInfo { margin-bottom: 12px; color: var(--muted); font-size: 13px; }
+  #rootInfo b { color: var(--text); }
+
+  /* Barre de filtres */
+  #filterBar { background: var(--panel); border: 1px solid #303641; border-radius: var(--radius); padding: 12px; margin-bottom: 16px; }
+  #filterBar .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #tagCloud { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip { border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; border: 1px solid #3a4150; background: var(--panel2); user-select: none; }
+  .chip.on { background: var(--accent); color: #0d1117; border-color: var(--accent2); font-weight: 600; }
+  .mode { color: var(--muted); font-size: 13px; }
+  #resultCount { color: var(--muted); font-size: 13px; margin-left: auto; }
+
+  /* Listes */
+  #fileList { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #fileList th, #fileList td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #2a303b; vertical-align: middle; }
+  #fileList th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+  #fileList tr:hover td { background: #232833; }
+  .tagcell { display: flex; flex-wrap: wrap; gap: 4px; max-width: 420px; }
+  .tagpill { background: #2d3b52; color: var(--accent2); border-radius: 999px; padding: 2px 9px; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+  .tagpill span.x { cursor: pointer; color: var(--muted); font-weight: 700; }
+  .tagpill span.x:hover { color: var(--danger); }
+  .addtag { color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 6px; border: 1px dashed #3a4150; border-radius: 999px; }
+  .addtag:hover { color: var(--accent); border-color: var(--accent); }
+  .fname { cursor: pointer; color: var(--accent2); }
+  .fname:hover { text-decoration: underline; }
+  .fpath { color: var(--muted); }
+
+  /* Mosaïque */
+  #mosaic { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .tile { background: var(--panel); border: 1px solid #303641; border-radius: var(--radius); overflow: hidden; cursor: pointer; position: relative; }
+  .tile:hover { border-color: var(--accent); }
+  .tile .thumb { width: 100%; aspect-ratio: 16/9; background: #0b0d10; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile .cap { padding: 8px 10px; font-size: 12px; }
+  .tile .cap .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .tile .cap .tags { color: var(--accent2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+  .tile .play { position: absolute; top: 40%; left: 50%; transform: translate(-50%,-50%); width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 18px; pointer-events: none; }
+
+  /* Visionneuse */
+  #viewer { display: none; position: fixed; inset: 0; background: rgba(5,7,10,.92); z-index: 50; flex-direction: column; }
+  #viewer.open { display: flex; }
+  #viewer .vhead { display: flex; align-items: center; gap: 12px; padding: 12px 18px; }
+  #viewer .vtitle { font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #viewer video { flex: 1; width: 100%; min-height: 0; background: #000; outline: none; }
+  #viewer .vnav { display: flex; gap: 8px; }
+
+  .hidden { display: none !important; }
+  #empty { color: var(--muted); padding: 40px; text-align: center; }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid #343b47; border-radius: var(--radius); padding: 18px; min-width: 340px; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog input { width: 100%; padding: 8px; border-radius: 8px; border: 1px solid #3a4150; background: var(--bg); color: var(--text); font-size: 14px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎬 TagVid</h1>
+  <button class="primary" id="btnPick">Choisir le dossier racine</button>
+  <button id="btnRescan" class="hidden">Recharger l'arborescence</button>
+  <button id="btnExport" class="hidden">Exporter les tags (JSON)</button>
+  <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
+  <input type="file" id="importFile" accept=".json" class="hidden">
+  <span id="status"></span>
+</header>
+
+<main>
+  <div id="rootInfo"></div>
+
+  <div id="filterBar" class="hidden">
+    <div class="row">
+      <span style="font-weight:600">Filtrer par tags :</span>
+      <label class="mode"><input type="radio" name="mode" value="and" checked> tous les tags (ET)</label>
+      <label class="mode"><input type="radio" name="mode" value="or"> au moins un tag (OU)</label>
+      <button class="small" id="btnClear">Effacer la sélection</button>
+      <span id="resultCount"></span>
+    </div>
+    <div id="tagCloud"></div>
+  </div>
+
+  <div id="empty">Cliquez sur « Choisir le dossier racine » pour commencer.<br>
+    <span class="hint">Fonctionne avec Chrome, Edge ou Opera (API File System Access). Les tags sont enregistrés localement dans le navigateur.</span>
+  </div>
+
+  <div id="tableView" class="hidden">
+    <table id="fileList">
+      <thead><tr><th>Nom</th><th>Dossier</th><th>Taille</th><th>Tags</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div id="mosaic" class="hidden"></div>
+</main>
+
+<div id="viewer">
+  <div class="vhead">
+    <span class="vtitle" id="vTitle"></span>
+    <div class="vnav">
+      <button id="vPrev">⏮ Précédent</button>
+      <button id="vNext">Suivant ⏭</button>
+      <button id="vClose">✕ Fermer</button>
+    </div>
+  </div>
+  <video id="vVideo" controls autoplay></video>
+</div>
+
+<dialog id="tagDlg">
+  <p style="margin-top:0;font-weight:600">Tags du fichier</p>
+  <p id="tagDlgName" style="font-size:12px;color:var(--muted);word-break:break-all"></p>
+  <input id="tagDlgInput" placeholder="tags séparés par des virgules…" autofocus>
+  <p class="hint">Exemple : vacances, 2024, famille</p>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <button id="tagDlgCancel">Annuler</button>
+    <button class="primary" id="tagDlgOk">Enregistrer</button>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+
+const VIDEO_EXT = ["mp4","webm","mov","mkv","avi","m4v","ogv","ogg","mpg","mpeg","3gp","wmv","flv"];
+const state = {
+  root: null,
+  files: [],        // {handle, path, name, dir, size, ext}
+  tags: new Map(),  // path -> Set
+  selected: new Set(),
+  mode: "and",
+  view: "table",    // or "mosaic"
+  visible: [],      // filtered files
+  viewerIndex: -1,
+};
+
+const $ = id => document.getElementById(id);
+const status = msg => { $("status").textContent = msg; };
+
+/* ---------- IndexedDB (tags + dossier racine + vignettes) ---------- */
+let db = null;
+function openDB() {
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open("tagvid", 1);
+    rq.onupgradeneeded = () => {
+      const d = rq.result;
+      if (!d.objectStoreNames.contains("tags")) d.createObjectStore("tags");
+      if (!d.objectStoreNames.contains("meta")) d.createObjectStore("meta");
+      if (!d.objectStoreNames.contains("thumbs")) d.createObjectStore("thumbs");
+    };
+    rq.onsuccess = () => { db = rq.result; res(db); };
+    rq.onerror = () => rej(rq.error);
+  });
+}
+function dbGetAll(store) {
+  return new Promise((res, rej) => {
+    const rq = db.transaction(store).objectStore(store).getAllKeys();
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+function dbGet(store, key) {
+  return new Promise((res, rej) => {
+    const rq = db.transaction(store).objectStore(store).get(key);
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+function dbPut(store, key, val) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readwrite");
+    tx.objectStore(store).put(val, key);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+function dbDelete(store, key) {
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readwrite");
+    tx.objectStore(store).delete(key);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+
+/* ---------- Choix du dossier racine ---------- */
+async function pickRoot() {
+  try {
+    state.root = await window.showDirectoryPicker({ mode: "read" });
+    await dbPut("meta", "root", state.root);
+    await scanRoot();
+  } catch (e) {
+    if (e.name !== "AbortError") status("Erreur : " + e.message);
+  }
+}
+
+async function restoreRoot() {
+  const saved = await dbGet("meta", "root");
+  if (!saved) return false;
+  let perm = "prompt";
+  try { perm = await saved.queryPermission({ mode: "read" }); } catch (e) {}
+  if (perm !== "granted") {
+    const btn = document.createElement("button");
+    btn.textContent = "Réouvrir le dernier dossier : " + saved.name;
+    btn.onclick = async () => {
+      try {
+        if (await saved.requestPermission({ mode: "read" }) === "granted") {
+          btn.remove();
+          state.root = saved;
+          await scanRoot();
+        }
+      } catch (e) {}
+    };
+    $("empty").classList.add("hidden");
+    $("btnPick").after(btn);
+    return false;
+  }
+  state.root = saved;
+  await scanRoot();
+  return true;
+}
+
+/* ---------- Scan récursif ---------- */
+async function scanRoot() {
+  status("Scan en cours…");
+  state.files = [];
+  await walk(state.root, "");
+  state.files.sort((a, b) => a.path.localeCompare(b.path, "fr", { numeric: true }));
+  const vids = state.files.filter(f => VIDEO_EXT.includes(f.ext)).length;
+  status("");
+  $("empty").classList.add("hidden");
+  $("btnRescan").classList.remove("hidden");
+  $("btnExport").classList.remove("hidden");
+  $("btnImport").classList.remove("hidden");
+  $("filterBar").classList.remove("hidden");
+  $("rootInfo").innerHTML = `Racine : <b>${escapeHtml(state.root.name)}</b> — ${state.files.length} fichiers (${vids} vidéos)`;
+  render();
+}
+
+async function walk(dir, prefix) {
+  for await (const [name, handle] of dir.entries()) {
+    if (name.startsWith(".")) continue;
+    if (handle.kind === "directory") {
+      await walk(handle, prefix + name + "/");
+    } else {
+      let size = 0;
+      try { size = (await handle.getFile()).size; } catch (e) {}
+      const dot = name.lastIndexOf(".");
+      state.files.push({
+        handle, name,
+        path: prefix + name,
+        dir: prefix,
+        size,
+        ext: dot > 0 ? name.slice(dot + 1).toLowerCase() : "",
+      });
+    }
+  }
+}
+
+/* ---------- Tags ---------- */
+async function loadTags() {
+  const keys = await dbGetAll("tags");
+  for (const k of keys) {
+    const v = await dbGet("tags", k);
+    state.tags.set(k, new Set(v || []));
+  }
+}
+async function saveTags(path) {
+  const set = state.tags.get(path);
+  if (!set || set.size === 0) await dbDelete("tags", path);
+  else await dbPut("tags", path, [...set]);
+}
+function tagsOf(path) { return state.tags.get(path) || new Set(); }
+function allTags() {
+  const s = new Set();
+  for (const set of state.tags.values()) for (const t of set) s.add(t);
+  return [...s].sort((a, b) => a.localeCompare(b, "fr"));
+}
+
+/* ---------- Filtrage ---------- */
+function applyFilter() {
+  const sel = state.selected;
+  if (sel.size === 0) { state.visible = state.files.slice(); return; }
+  state.visible = state.files.filter(f => {
+    const t = tagsOf(f.path);
+    if (state.mode === "and") return [...sel].every(x => t.has(x));
+    return [...sel].some(x => t.has(x));
+  });
+}
+
+/* ---------- Rendu ---------- */
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+function fmtSize(n) {
+  if (!n) return "—";
+  const u = ["o","Ko","Mo","Go"]; let i = 0;
+  while (n >= 1024 && i < 3) { n /= 1024; i++; }
+  return n.toFixed(i === 0 ? 0 : 1) + " " + u[i];
+}
+
+function render() {
+  applyFilter();
+  renderTagCloud();
+  $("resultCount").textContent = `${state.visible.length} fichier(s) affiché(s)`;
+  if (state.view === "table") renderTable(); else renderMosaic();
+}
+
+function renderTagCloud() {
+  const tags = allTags();
+  const cloud = $("tagCloud");
+  cloud.innerHTML = "";
+  for (const t of tags) {
+    const el = document.createElement("span");
+    el.className = "chip" + (state.selected.has(t) ? " on" : "");
+    el.textContent = t;
+    el.onclick = () => {
+      state.selected.has(t) ? state.selected.delete(t) : state.selected.add(t);
+      render();
+    };
+    cloud.appendChild(el);
+  }
+  if (tags.length === 0) cloud.innerHTML = '<span class="hint">Aucun tag défini pour l\'instant — ajoutez-en depuis la liste de fichiers.</span>';
+}
+
+function renderTable() {
+  $("mosaic").classList.add("hidden");
+  $("tableView").classList.remove("hidden");
+  const tb = $("fileList").tBodies[0];
+  tb.innerHTML = "";
+  for (const f of state.visible) {
+    const tr = document.createElement("tr");
+
+    const tdName = document.createElement("td");
+    const a = document.createElement("span");
+    a.className = "fname"; a.textContent = f.name;
+    a.onclick = () => openViewer(f);
+    tdName.appendChild(a);
+
+    const tdDir = document.createElement("td");
+    tdDir.className = "fpath"; tdDir.textContent = f.dir || "racine";
+
+    const tdSize = document.createElement("td");
+    tdSize.textContent = fmtSize(f.size);
+
+    const tdTags = document.createElement("td");
+    const cell = document.createElement("div");
+    cell.className = "tagcell";
+    for (const t of tagsOf(f.path)) {
+      const pill = document.createElement("span");
+      pill.className = "tagpill";
+      pill.textContent = t;
+      const x = document.createElement("span");
+      x.className = "x"; x.textContent = "✕"; x.title = "Retirer ce tag";
+      x.onclick = async () => { tagsOf(f.path).delete(t); await saveTags(f.path); render(); };
+      pill.appendChild(x);
+      cell.appendChild(pill);
+    }
+    const add = document.createElement("span");
+    add.className = "addtag"; add.textContent = "+ tag";
+    add.onclick = () => openTagDialog(f);
+    cell.appendChild(add);
+    tdTags.appendChild(cell);
+
+    tr.append(tdName, tdDir, tdSize, tdTags);
+    tb.appendChild(tr);
+  }
+}
+
+function renderMosaic() {
+  $("tableView").classList.add("hidden");
+  const mosaic = $("mosaic");
+  mosaic.classList.remove("hidden");
+  mosaic.innerHTML = "";
+  const vids = state.visible.filter(f => VIDEO_EXT.includes(f.ext));
+  if (vids.length === 0) {
+    mosaic.innerHTML = '<p class="hint">Aucune vidéo ne correspond au filtre courant.</p>';
+    return;
+  }
+  for (const f of vids) mosaic.appendChild(makeTile(f));
+}
+
+function makeTile(f) {
+  const tile = document.createElement("div");
+  tile.className = "tile";
+  const thumb = document.createElement("div");
+  thumb.className = "thumb";
+  thumb.textContent = "…";
+  tile.appendChild(thumb);
+  tile.insertAdjacentHTML("beforeend", '<div class="play">▶</div>');
+  const cap = document.createElement("div");
+  cap.className = "cap";
+  cap.innerHTML = `<div class="t">${escapeHtml(f.name)}</div><div class="tags">${escapeHtml([...tagsOf(f.path)].join(", "))}</div>`;
+  tile.appendChild(cap);
+  tile.onclick = () => openViewer(f);
+  generateThumb(f, thumb);
+  return tile;
+}
+
+/* ---------- Vignettes vidéo (capture via canvas, mise en cache) ---------- */
+async function generateThumb(f, el) {
+  const cached = await dbGet("thumbs", f.path);
+  if (cached) { el.innerHTML = `<img src="${cached}" alt="">`; return; }
+  try {
+    const file = await f.handle.getFile();
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.muted = true; video.preload = "metadata"; video.src = url;
+    await new Promise((res, rej) => {
+      video.onloadeddata = () => { video.currentTime = Math.min(1, (video.duration || 2) / 3); };
+      video.onseeked = res;
+      video.onerror = rej;
+      setTimeout(rej, 8000);
+    });
+    const canvas = document.createElement("canvas");
+    const w = 320;
+    canvas.width = w;
+    canvas.height = Math.round(w * (video.videoHeight || 9) / (video.videoWidth || 16));
+    canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+    const data = canvas.toDataURL("image/jpeg", 0.7);
+    el.innerHTML = `<img src="${data}" alt="">`;
+    try { await dbPut("thumbs", f.path, data); } catch (e) {}
+  } catch (e) {
+    el.textContent = "🎬";
+  }
+}
+
+/* ---------- Boîte de dialogue tags ---------- */
+let dlgFile = null;
+function openTagDialog(f) {
+  dlgFile = f;
+  $("tagDlgName").textContent = f.path;
+  $("tagDlgInput").value = [...tagsOf(f.path)].join(", ");
+  $("tagDlg").showModal();
+  $("tagDlgInput").focus();
+}
+async function submitTagDialog() {
+  if (!dlgFile) return;
+  const parts = $("tagDlgInput").value.split(",").map(s => s.trim()).filter(Boolean);
+  state.tags.set(dlgFile.path, new Set(parts));
+  await saveTags(dlgFile.path);
+  $("tagDlg").close();
+  render();
+}
+
+/* ---------- Visionneuse ---------- */
+let currentUrl = null;
+function visibleVideos() { return state.visible.filter(f => VIDEO_EXT.includes(f.ext)); }
+
+async function openViewer(f) {
+  const vids = visibleVideos();
+  let idx = vids.indexOf(f);
+  if (idx === -1) { vids.push(f); idx = vids.length - 1; }
+  state.viewerIndex = idx;
+  await playCurrent();
+  $("viewer").classList.add("open");
+}
+async function playCurrent() {
+  const vids = visibleVideos();
+  const f = vids[state.viewerIndex];
+  if (!f) return;
+  if (currentUrl) URL.revokeObjectURL(currentUrl);
+  currentUrl = URL.createObjectURL(await f.handle.getFile());
+  $("vTitle").textContent = f.path;
+  $("vVideo").src = currentUrl;
+  $("vVideo").play().catch(() => {});
+}
+function viewerStep(d) {
+  const vids = visibleVideos();
+  if (vids.length === 0) return;
+  state.viewerIndex = (state.viewerIndex + d + vids.length) % vids.length;
+  playCurrent();
+}
+function closeViewer() {
+  $("vVideo").pause();
+  $("vVideo").src = "";
+  if (currentUrl) { URL.revokeObjectURL(currentUrl); currentUrl = null; }
+  $("viewer").classList.remove("open");
+}
+
+/* ---------- Import / export ---------- */
+function exportTags() {
+  const obj = {};
+  for (const [k, v] of state.tags) obj[k] = [...v];
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "tagvid-tags.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+async function importTags(file) {
+  const obj = JSON.parse(await file.text());
+  for (const [k, v] of Object.entries(obj)) {
+    state.tags.set(k, new Set(Array.isArray(v) ? v.map(String) : []));
+    await saveTags(k);
+  }
+  render();
+}
+
+/* ---------- Événements ---------- */
+$("btnPick").onclick = pickRoot;
+$("btnRescan").onclick = scanRoot;
+$("btnExport").onclick = exportTags;
+$("btnImport").onclick = () => $("importFile").click();
+$("importFile").onchange = e => { if (e.target.files[0]) importTags(e.target.files[0]).catch(err => alert("Import impossible : " + err.message)); };
+document.querySelectorAll('input[name="mode"]').forEach(r => r.onchange = () => { state.mode = r.value; render(); });
+$("btnClear").onclick = () => { state.selected.clear(); render(); };
+$("tagDlgOk").onclick = submitTagDialog;
+$("tagDlgCancel").onclick = () => $("tagDlg").close();
+$("tagDlgInput").addEventListener("keydown", e => { if (e.key === "Enter") submitTagDialog(); });
+$("vClose").onclick = closeViewer;
+$("vPrev").onclick = () => viewerStep(-1);
+$("vNext").onclick = () => viewerStep(1);
+document.addEventListener("keydown", e => {
+  if (!$("viewer").classList.contains("open")) return;
+  if (e.key === "Escape") closeViewer();
+  if (e.key === "ArrowLeft") viewerStep(-1);
+  if (e.key === "ArrowRight") viewerStep(1);
+});
+
+/* Bascule tableau ⇄ mosaïque */
+const toggle = document.createElement("button");
+toggle.id = "btnView";
+toggle.textContent = "🖼 Vue mosaïque";
+toggle.classList.add("hidden");
+$("btnRescan").after(toggle);
+toggle.onclick = () => {
+  state.view = state.view === "table" ? "mosaic" : "table";
+  toggle.textContent = state.view === "table" ? "🖼 Vue mosaïque" : "📋 Vue liste";
+  render();
+};
+const originalScan = scanRoot;
+scanRoot = async function () {
+  await originalScan();
+  toggle.classList.remove("hidden");
+};
+
+/* ---------- Démarrage ---------- */
+(async () => {
+  if (!window.showDirectoryPicker) {
+    $("empty").innerHTML = "Votre navigateur ne supporte pas l'accès au disque local (File System Access API).<br>" +
+      '<span class="hint">Utilisez Chrome, Edge ou Opera (versions récentes). Firefox et Safari ne sont pas compatibles.</span>';
+    return;
+  }
+  await openDB();
+  await loadTags();
+  status("");
+  const ok = await restoreRoot().catch(() => false);
+  if (!ok) status("");
+})();
+</script>
+</body>
+</html>
