@@ -111,9 +111,7 @@
   <div id="filterBar" class="hidden">
     <div class="row">
       <span style="font-weight:600">Filtrer par tags :</span>
-      <label class="mode"><input type="radio" name="mode" value="and" checked> tous les tags (ET)</label>
-      <label class="mode"><input type="radio" name="mode" value="or"> au moins un tag (OU)</label>
-      <button class="small" id="btnClear">Effacer la sélection</button>
+      <span class="hintline">Dans un groupe : OU — entre groupes : ET</span>
       <span id="resultCount"></span>
     </div>
     <div id="groups"></div>
@@ -129,7 +127,7 @@
       <button class="small" id="btnCollapseAll">▸ Replier tout</button>
     </div>
     <table id="fileList">
-      <thead><tr><th>Nom</th><th>Taille</th><th>Groupe 1</th><th>Groupe 2</th><th>Groupe 3</th><th>Groupe 4</th></tr></thead>
+      <thead><tr><th>Nom</th><th>Taille</th><th>Tags 1</th><th>Tags 2</th><th>Tags 3</th><th>Tags 4</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -152,10 +150,10 @@
 <dialog id="tagDlg">
   <p style="margin-top:0;font-weight:600">Tags du fichier</p>
   <p id="tagDlgName" style="font-size:12px;color:var(--muted);word-break:break-all"></p>
-  <div class="grow"><label>Groupe 1</label><input id="tagDlgIn0" placeholder="tags séparés par des virgules…"></div>
-  <div class="grow"><label>Groupe 2</label><input id="tagDlgIn1" placeholder="tags séparés par des virgules…"></div>
-  <div class="grow"><label>Groupe 3</label><input id="tagDlgIn2" placeholder="tags séparés par des virgules…"></div>
-  <div class="grow"><label>Groupe 4</label><input id="tagDlgIn3" placeholder="tags séparés par des virgules…"></div>
+  <div class="grow"><label>Tags 1</label><input id="tagDlgIn0" placeholder="tags séparés par des virgules…"></div>
+  <div class="grow"><label>Tags 2</label><input id="tagDlgIn1" placeholder="tags séparés par des virgules…"></div>
+  <div class="grow"><label>Tags 3</label><input id="tagDlgIn2" placeholder="tags séparés par des virgules…"></div>
+  <div class="grow"><label>Tags 4</label><input id="tagDlgIn3" placeholder="tags séparés par des virgules…"></div>
   <p class="hint">Exemple : vacances, 2024, famille</p>
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
     <button id="tagDlgCancel">Annuler</button>
@@ -176,7 +174,6 @@ const state = {
   letterSel: Array(NB_GROUPS).fill(null),
   groupSearch: Array(NB_GROUPS).fill(""),
   groupsOpen: new Set([0]),
-  mode: "and",
   view: "table",
   visible: [],
   viewerIndex: -1,
@@ -344,15 +341,15 @@ function normalizeKey(s) { return s.trim().toLocaleUpperCase("fr").normalize("NF
 
 /* ---------- Filtrage ---------- */
 function applyFilter() {
-  const anySel = state.selected.some(s => s.size > 0);
-  if (!anySel) { state.visible = state.files.slice(); return; }
+  const active = [];
+  for (let g = 0; g < NB_GROUPS; g++) if (state.selected[g].size > 0) active.push(g);
+  if (active.length === 0) { state.visible = state.files.slice(); return; }
   state.visible = state.files.filter(f => {
     const groups = tagsOf(f.path);
-    const checks = [];
-    for (let g = 0; g < NB_GROUPS; g++) {
-      for (const t of state.selected[g]) checks.push(groups[g].has(t));
-    }
-    return state.mode === "and" ? checks.every(Boolean) : checks.some(Boolean);
+    return active.every(g => {
+      for (const t of state.selected[g]) if (groups[g].has(t)) return true;
+      return false;
+    });
   });
 }
 
@@ -389,7 +386,7 @@ function makeGroupPanel(g) {
   head.className = "ghead";
   const nSel = state.selected[g].size;
   head.innerHTML = `<span class="arrow">${state.groupsOpen.has(g) ? "▾" : "▸"}</span>` +
-    `Groupe ${g + 1} <span class="cnt">${tags.length} tag(s)${nSel ? " — " + nSel + " sélectionné(s)" : ""}</span>`;
+    `Tags ${g + 1} <span class="cnt">${tags.length} tag(s)${nSel ? " — " + nSel + " sélectionné(s)" : ""}</span>`;
   head.onclick = () => {
     state.groupsOpen.has(g) ? state.groupsOpen.delete(g) : state.groupsOpen.add(g);
     renderGroups();
@@ -407,6 +404,12 @@ function makeGroupPanel(g) {
   search.value = state.groupSearch[g];
   search.oninput = () => { state.groupSearch[g] = search.value; renderChips(); };
   tools.appendChild(search);
+  const clearBtn = document.createElement("button");
+  clearBtn.className = "small";
+  clearBtn.textContent = "Effacer la sélection";
+  clearBtn.style.display = state.selected[g].size > 0 ? "" : "none";
+  clearBtn.onclick = () => { state.selected[g].clear(); render(); };
+  tools.appendChild(clearBtn);
 
   const letters = document.createElement("div");
   letters.className = "letters";
@@ -717,8 +720,6 @@ $("btnRescan").onclick = scanRoot;
 $("btnExport").onclick = exportTags;
 $("btnImport").onclick = () => $("importFile").click();
 $("importFile").onchange = e => { if (e.target.files[0]) importTags(e.target.files[0]).catch(err => alert("Import impossible : " + err.message)); };
-document.querySelectorAll('input[name="mode"]').forEach(r => r.onchange = () => { state.mode = r.value; render(); });
-$("btnClear").onclick = () => { state.selected = Array.from({length: NB_GROUPS}, () => new Set()); render(); };
 $("btnExpandAll").onclick = () => { state.collapsed.clear(); persistCollapsed(); render(); };
 $("btnCollapseAll").onclick = () => { state.collapsed = allDirPaths(); persistCollapsed(); render(); };
 $("tagDlgOk").onclick = submitTagDialog;
