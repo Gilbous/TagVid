@@ -72,7 +72,9 @@
   .tile .thumb { width: 100%; aspect-ratio: 16/9; background: #0b0d10; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; }
   .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .tile .cap { padding: 8px 10px; font-size: 12px; }
+  .tile .cap .trow { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
   .tile .cap .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .tile .cap .dur { color: var(--muted); font-size: 11px; white-space: nowrap; }
   .tile .cap .tags { color: var(--accent2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
 
   /* Visionneuse */
@@ -111,7 +113,7 @@
   <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.12</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.13</span>
 </header>
 
 <main>
@@ -766,13 +768,49 @@ function makeTile(f) {
   const cap = document.createElement("div");
   cap.className = "cap";
   const all = tagsOf(f.path).flatMap(s => [...s]);
-  cap.innerHTML = `<div class="t">${escapeHtml(f.name)}</div>` +
+  cap.innerHTML = `<div class="trow"><span class="t">${escapeHtml(f.name)}</span><span class="dur"></span></div>` +
     `<div style="margin-top:3px">${starsHTML(state.ratings.get(f.path) || 0, 5)}</div>` +
     `<div class="tags">${escapeHtml(all.join(", "))}</div>`;
   tile.appendChild(cap);
   tile.onclick = () => openViewer(f);
-  generateThumb(f, thumb);
+  const durEl = cap.querySelector(".dur");
+  let entry = null, anim = null, hovering = false;
+  ensureThumb(f).then(e => {
+    entry = e;
+    if (e.img) thumb.innerHTML = `<img src="${e.img}" alt="">`;
+    else thumb.textContent = "🎬";
+    if (e.dur) durEl.textContent = fmtDuration(e.dur);
+  });
+  tile.onmouseenter = async () => {
+    hovering = true;
+    if (!entry || !entry.img) return;
+    const e = await ensureFrames(f, entry);
+    if (!hovering || !e.frames || e.frames.length === 0) return;
+    if (e.dur && !durEl.textContent) durEl.textContent = fmtDuration(e.dur);
+    let i = 0;
+    const img = thumb.querySelector("img");
+    anim = setInterval(() => {
+      if (img) img.src = e.frames[i % e.frames.length];
+      i++;
+    }, 500);
+  };
+  tile.onmouseleave = () => {
+    hovering = false;
+    clearInterval(anim);
+    if (entry && entry.img) {
+      const img = thumb.querySelector("img");
+      if (img) img.src = entry.img;
+    }
+  };
   return tile;
+}
+
+function fmtDuration(s) {
+  if (!s || !isFinite(s)) return "";
+  s = Math.round(s);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const mm = String(m).padStart(2, "0"), ss = String(sec).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${m}:${ss}`;
 }
 
 /* ---------- Vignettes vidéo (intelligentes : frame la plus lumineuse parmi 1/3/5/7/9 s) ---------- */
@@ -794,19 +832,26 @@ function frameLuminance(video) {
   for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
   return sum / (d.length / 4);
 }
-async function generateThumb(f, el) {
-  const cached = await dbGet("thumbs", f.path);
-  if (cached) { el.innerHTML = `<img src="${cached}" alt="">`; return; }
+async function loadVideoEl(f) {
+  const url = URL.createObjectURL(await f.handle.getFile());
+  const video = document.createElement("video");
+  video.muted = true; video.preload = "metadata"; video.src = url;
+  await new Promise((res, rej) => {
+    video.onloadeddata = res;
+    video.onerror = rej;
+    setTimeout(rej, 10000);
+  });
+  return [video, () => URL.revokeObjectURL(url)];
+}
+async function ensureThumb(f) {
+  let e = await dbGet("thumbs", f.path);
+  if (typeof e === "string") {
+    e = { img: e, dur: 0 };
+    try { await dbPut("thumbs", f.path, e); } catch (err) {}
+  }
+  if (e && e.img) return e;
   try {
-    const file = await f.handle.getFile();
-    const url = URL.createObjectURL(file);
-    const video = document.createElement("video");
-    video.muted = true; video.preload = "metadata"; video.src = url;
-    await new Promise((res, rej) => {
-      video.onloadeddata = res;
-      video.onerror = rej;
-      setTimeout(rej, 10000);
-    });
+    const [video, done] = await loadVideoEl(f);
     const candidates = [1, 3, 5, 7, 9].filter(t => t < (video.duration || Infinity) - 0.1);
     let bestT = candidates[0] ?? 0, bestLum = -1;
     for (const t of candidates) {
@@ -814,7 +859,7 @@ async function generateThumb(f, el) {
         await seekTo(video, t);
         const lum = frameLuminance(video);
         if (lum > bestLum) { bestLum = lum; bestT = t; }
-      } catch (e) { break; }
+      } catch (err) { break; }
     }
     if (bestLum >= 0) await seekTo(video, bestT);
     const canvas = document.createElement("canvas");
@@ -822,12 +867,40 @@ async function generateThumb(f, el) {
     canvas.width = w;
     canvas.height = Math.round(w * (video.videoHeight || 9) / (video.videoWidth || 16));
     canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-    URL.revokeObjectURL(url);
-    const data = canvas.toDataURL("image/jpeg", 0.7);
-    el.innerHTML = `<img src="${data}" alt="">`;
-    try { await dbPut("thumbs", f.path, data); } catch (e) {}
-  } catch (e) {
-    el.textContent = "🎬";
+    const dur = video.duration || 0;
+    done();
+    e = { img: canvas.toDataURL("image/jpeg", 0.7), dur };
+    try { await dbPut("thumbs", f.path, e); } catch (err) {}
+    return e;
+  } catch (err) {
+    return { img: null, dur: 0 };
+  }
+}
+async function ensureFrames(f, e) {
+  if (e.frames) return e;
+  if (!e.img || !e.dur) return e;
+  try {
+    const [video, done] = await loadVideoEl(f);
+    const frames = [];
+    const step = 30;
+    for (let t = step; t < (video.duration || 0) && frames.length < 30; t += step) {
+      try { await seekTo(video, t); } catch (err) { break; }
+      const canvas = document.createElement("canvas");
+      const w = 160;
+      canvas.width = w;
+      canvas.height = Math.round(w * (video.videoHeight || 9) / (video.videoWidth || 16));
+      canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+      frames.push(canvas.toDataURL("image/jpeg", 0.5));
+    }
+    done();
+    if (frames.length > 0) {
+      e.frames = frames;
+      e.dur = e.dur || video.duration || 0;
+      try { await dbPut("thumbs", f.path, e); } catch (err) {}
+    }
+    return e;
+  } catch (err) {
+    return e;
   }
 }
 
