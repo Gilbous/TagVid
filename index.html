@@ -74,7 +74,6 @@
   .tile .cap { padding: 8px 10px; font-size: 12px; }
   .tile .cap .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
   .tile .cap .tags { color: var(--accent2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
-  .tile .play { position: absolute; top: 40%; left: 50%; transform: translate(-50%,-50%); width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; font-size: 18px; pointer-events: none; }
 
   /* Visionneuse */
   #viewer { display: none; position: fixed; inset: 0; background: rgba(5,7,10,.92); z-index: 50; flex-direction: column; }
@@ -112,7 +111,7 @@
   <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.11</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.12</span>
 </header>
 
 <main>
@@ -764,7 +763,6 @@ function makeTile(f) {
   thumb.className = "thumb";
   thumb.textContent = "…";
   tile.appendChild(thumb);
-  tile.insertAdjacentHTML("beforeend", '<div class="play">▶</div>');
   const cap = document.createElement("div");
   cap.className = "cap";
   const all = tagsOf(f.path).flatMap(s => [...s]);
