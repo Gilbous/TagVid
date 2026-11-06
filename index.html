@@ -126,6 +126,7 @@
         <span id="voteChips" class="chips"></span>
       </span>
       <label class="mode"><input type="checkbox" id="sortRating"> Trier par vote ↓</label>
+      <button class="small" id="btnResetFilters">↺ Réinitialiser les filtres</button>
       <span id="resultCount"></span>
     </div>
     <div id="groups"></div>
@@ -1070,6 +1071,14 @@ $("btnThumbs").onclick = async () => {
 $("btnImport").onclick = () => $("importFile").click();
 $("importFile").onchange = e => { if (e.target.files[0]) importTags(e.target.files[0]).catch(err => alert("Import impossible : " + err.message)); };
 $("sortRating").onchange = e => { state.sortByRating = e.target.checked; render(); };
+$("btnResetFilters").onclick = () => {
+  state.selected = Array.from({length: NB_GROUPS}, () => new Set());
+  state.noTag.clear();
+  state.minRating = 0;
+  state.groupSearch = Array(NB_GROUPS).fill("");
+  state.letterSel = Array(NB_GROUPS).fill(null);
+  render();
+};
 $("btnExpandAll").onclick = () => { state.collapsed.clear(); persistCollapsed(); render(); };
 $("btnCollapseAll").onclick = () => { state.collapsed = allDirPaths(); persistCollapsed(); render(); };
 $("tagDlgOk").onclick = submitTagDialog;
