@@ -155,6 +155,9 @@
     <div class="vnav">
       <span class="stars" id="vStars" title="Voter : cliquez sur une étoile (recliquez pour retirer)"></span>
       <button id="vTags">🏷 Tags</button>
+      <button id="vRename" title="Renommer le fichier sur le disque">✏️ Renommer</button>
+      <button id="vMove" title="Déplacer le fichier dans un sous-répertoire de la racine">📂 Déplacer</button>
+      <button id="vDelete" title="Supprimer définitivement le fichier du disque" style="border-color:var(--danger);color:var(--danger)">🗑 Supprimer</button>
       <button id="vPrev">⏮ Précédent</button>
       <button class="seekbtn" id="vBack30" title="Reculer de 30 s">« 30 s</button>
       <button class="seekbtn" id="vBack15" title="Reculer de 10 s (←)">‹ 10 s</button>
@@ -329,6 +332,7 @@ async function walk(dir, prefix) {
         dir: prefix,
         size,
         ext: dot > 0 ? name.slice(dot + 1).toLowerCase() : "",
+        parent: dir,
       });
     }
   }
@@ -799,6 +803,125 @@ async function submitTagDialog() {
   render();
 }
 
+/* ---------- Opérations disque (suppression, renommage, déplacement) ---------- */
+async function ensureWrite() {
+  let p = "prompt";
+  try { p = await state.root.queryPermission({ mode: "readwrite" }); } catch (e) {}
+  if (p !== "granted") {
+    try { p = await state.root.requestPermission({ mode: "readwrite" }); } catch (e) { p = "denied"; }
+  }
+  if (p !== "granted") { alert("L'autorisation d'écriture sur le dossier racine est requise pour cette action."); return false; }
+  return true;
+}
+async function migratePath(oldP, newP) {
+  if (state.tags.has(oldP)) {
+    state.tags.set(newP, state.tags.get(oldP));
+    state.tags.delete(oldP);
+  }
+  await saveTags(oldP);
+  await saveTags(newP);
+  const r = state.ratings.get(oldP);
+  if (r !== undefined) {
+    state.ratings.set(newP, r);
+    state.ratings.delete(oldP);
+    await dbDelete("ratings", oldP);
+    await dbPut("ratings", newP, r);
+  }
+  const th = await dbGet("thumbs", oldP);
+  if (th) {
+    await dbPut("thumbs", newP, th);
+    await dbDelete("thumbs", oldP);
+  }
+}
+async function purgePath(p) {
+  state.tags.delete(p);
+  await saveTags(p);
+  state.ratings.delete(p);
+  await dbDelete("ratings", p);
+  await dbDelete("thumbs", p);
+}
+async function fileExists(dirHandle, name) {
+  try { await dirHandle.getFileHandle(name); return true; } catch (e) { return false; }
+}
+async function writeBlob(dirHandle, name, blob) {
+  const fh = await dirHandle.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(blob);
+  await w.close();
+  return fh;
+}
+async function deleteCurrentFile() {
+  const f = currentVideoFile();
+  if (!f || !f.parent) return;
+  if (!confirm(`Supprimer définitivement « ${f.name} » du disque ?\nCette action est irréversible.`)) return;
+  if (!(await ensureWrite())) return;
+  try {
+    await f.parent.removeEntry(f.name);
+    await purgePath(f.path);
+    state.files = state.files.filter(x => x.path !== f.path);
+    closeViewer();
+    await scanRoot();
+  } catch (e) {
+    alert("Suppression impossible : " + e.message);
+  }
+}
+async function renameCurrentFile() {
+  const f = currentVideoFile();
+  if (!f || !f.parent) return;
+  if (!(await ensureWrite())) return;
+  while (true) {
+    const newName = prompt("Nouveau nom du fichier :", f.name);
+    if (!newName || newName === f.name) return;
+    if (newName.includes("/") || newName.trim() === "") { alert("Nom invalide (vide ou contenant un slash)."); continue; }
+    if (await fileExists(f.parent, newName)) {
+      alert(`Un fichier nommé « ${newName} » existe déjà dans ce répertoire. Choisissez un autre nom.`);
+      continue;
+    }
+    try {
+      const blob = await f.handle.getFile();
+      await writeBlob(f.parent, newName, blob);
+      await f.parent.removeEntry(f.name);
+      await migratePath(f.path, f.dir + newName);
+      closeViewer();
+      await scanRoot();
+      return;
+    } catch (e) {
+      alert("Renommage impossible : " + e.message);
+      return;
+    }
+  }
+}
+async function moveCurrentFile() {
+  const f = currentVideoFile();
+  if (!f || !f.parent) return;
+  if (!(await ensureWrite())) return;
+  while (true) {
+    const rel = prompt(`Sous-répertoire de destination, relatif à la racine « ${state.root.name} »\n(ex. : vacances/2024 — créé s'il n'existe pas) :`, f.dir || "");
+    if (rel === null) return;
+    const clean = rel.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+    if (clean === "") { alert("Chemin invalide."); continue; }
+    if (clean === (f.dir || "").replace(/\/+$/, "")) { alert("Le fichier est déjà dans ce répertoire."); continue; }
+    try {
+      const targetDir = await state.root.getDirectoryHandle(clean, { create: true });
+      if (await fileExists(targetDir, f.name)) {
+        alert(`Un fichier nommé « ${f.name} » existe déjà dans « ${clean} ». Déplacez-le d'abord ou renommez-le.`);
+        continue;
+      }
+      const blob = await f.handle.getFile();
+      await writeBlob(targetDir, f.name, blob);
+      await f.parent.removeEntry(f.name);
+      const newDir = clean + "/";
+      await migratePath(f.path, newDir + f.name);
+      closeViewer();
+      await scanRoot();
+      return;
+    } catch (e) {
+      alert("Déplacement impossible : " + e.message);
+      return;
+    }
+  }
+}
+
 /* ---------- Visionneuse ---------- */
 let currentUrl = null;
 function visibleVideos() { return state.visible.filter(f => VIDEO_EXT.includes(f.ext)); }
@@ -915,6 +1038,9 @@ for (let g = 0; g < NB_GROUPS; g++) {
 }
 $("vClose").onclick = closeViewer;
 $("vTags").onclick = () => { const f = currentVideoFile(); if (f) openTagDialog(f); };
+$("vDelete").onclick = deleteCurrentFile;
+$("vRename").onclick = renameCurrentFile;
+$("vMove").onclick = moveCurrentFile;
 $("vPrev").onclick = () => viewerStep(-1);
 $("vNext").onclick = () => viewerStep(1);
 $("vBack30").onclick = () => seekVideo(-30);
