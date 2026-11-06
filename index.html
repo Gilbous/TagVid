@@ -210,6 +210,7 @@ const state = {
   ratings: new Map(),
   minRating: 0,
   sortByRating: false,
+  mosaicPending: false,
   view: "table",
   visible: [],
   viewerIndex: -1,
@@ -443,7 +444,25 @@ function render() {
   renderGroups();
   renderVoteChips();
   $("resultCount").textContent = `${state.visible.length} fichier(s) affiché(s)`;
-  if (state.view === "table") renderTable(); else renderMosaic();
+  if (state.view === "table") { renderTable(); return; }
+  const nb = state.visible.filter(f => VIDEO_EXT.includes(f.ext)).length;
+  if (nb <= 100) { renderMosaic(); return; }
+  if (state.mosaicPending) {
+    $("mosaic").classList.remove("hidden");
+    $("mosaic").innerHTML = '<p class="hint">⏳ Confirmation en attente…</p>';
+    return;
+  }
+  state.mosaicPending = true;
+  askConfirm(`Votre sélection concerne ${nb} fichiers. Confirmez-vous l'affichage en mode mosaïque ?`).then(ok => {
+    state.mosaicPending = false;
+    if (!ok) {
+      state.view = "table";
+      $("btnView").textContent = "🖼 Vue mosaïque";
+    }
+    render();
+  });
+  $("mosaic").classList.remove("hidden");
+  $("mosaic").innerHTML = '<p class="hint">⏳ Confirmation en attente…</p>';
 }
 
 function renderVoteChips() {
@@ -1083,19 +1102,9 @@ toggle.id = "btnView";
 toggle.textContent = "🖼 Vue mosaïque";
 toggle.classList.add("hidden");
 $("btnRescan").after(toggle);
-toggle.onclick = async () => {
-  if (state.view === "table") {
-    const nb = state.visible.filter(f => VIDEO_EXT.includes(f.ext)).length;
-    if (nb > 100) {
-      const ok = await askConfirm(`Votre sélection concerne ${nb} fichiers. Confirmez-vous le passage en mode mosaïque ?`);
-      if (!ok) return;
-    }
-    state.view = "mosaic";
-    toggle.textContent = "📋 Vue liste";
-  } else {
-    state.view = "table";
-    toggle.textContent = "🖼 Vue mosaïque";
-  }
+toggle.onclick = () => {
+  state.view = state.view === "table" ? "mosaic" : "table";
+  toggle.textContent = state.view === "table" ? "🖼 Vue mosaïque" : "📋 Vue liste";
   render();
 };
 
