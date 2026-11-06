@@ -112,6 +112,7 @@
   <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.10</span>
 </header>
 
 <main>
@@ -882,8 +883,10 @@ async function purgePath(p) {
 }
 async function getSubDir(rootHandle, rel, create) {
   let d = rootHandle;
-  for (const seg of rel.split("/")) {
-    if (seg) d = await d.getDirectoryHandle(seg, { create: !!create });
+  for (let seg of rel.split("/")) {
+    seg = seg.trim();
+    if (!seg || seg === "." || seg === "..") continue;
+    d = await d.getDirectoryHandle(seg, { create: !!create });
   }
   return d;
 }
@@ -1001,7 +1004,7 @@ async function moveCurrentFile() {
       await scanRoot();
       return;
     } catch (e) {
-      alert("Déplacement impossible : " + e.message);
+      alert(`Déplacement impossible vers « ${clean} » : ${e.message}`);
       return;
     }
   }
