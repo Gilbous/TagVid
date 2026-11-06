@@ -112,7 +112,7 @@
   <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.10</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.11</span>
 </header>
 
 <main>
@@ -225,6 +225,8 @@ const state = {
   minRating: 0,
   sortByRating: false,
   mosaicPending: false,
+  mosaicSig: null,
+  filterSig: null,
   view: "table",
   visible: [],
   viewerIndex: -1,
@@ -425,6 +427,13 @@ function applyFilter() {
     });
   });
   sortVisible();
+  state.filterSig = JSON.stringify([
+    state.selected.map(s => [...s]),
+    [...state.noTag],
+    state.minRating,
+    state.sortByRating,
+    state.files.length,
+  ]);
 }
 function sortVisible() {
   if (!state.sortByRating) return;
@@ -460,7 +469,7 @@ function render() {
   $("resultCount").textContent = `${state.visible.length} fichier(s) affiché(s)`;
   if (state.view === "table") { renderTable(); return; }
   const nb = state.visible.filter(f => VIDEO_EXT.includes(f.ext)).length;
-  if (nb <= 100) { renderMosaic(); return; }
+  if (nb <= 100 || state.mosaicSig === state.filterSig) { renderMosaic(); return; }
   if (state.mosaicPending) {
     $("mosaic").classList.remove("hidden");
     $("mosaic").innerHTML = '<p class="hint">⏳ Confirmation en attente…</p>';
@@ -469,7 +478,9 @@ function render() {
   state.mosaicPending = true;
   askConfirm(`Votre sélection concerne ${nb} fichiers. Confirmez-vous l'affichage en mode mosaïque ?`).then(ok => {
     state.mosaicPending = false;
-    if (!ok) {
+    if (ok) {
+      state.mosaicSig = state.filterSig;
+    } else {
       state.view = "table";
       $("btnView").textContent = "🖼 Vue mosaïque";
     }
