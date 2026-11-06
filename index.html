@@ -185,6 +185,18 @@
   </div>
 </dialog>
 
+<dialog id="moveDlg">
+  <p style="margin-top:0;font-weight:600">Déplacer le fichier</p>
+  <p id="moveDlgFile" style="font-size:12px;color:var(--muted);word-break:break-all"></p>
+  <label style="font-size:13px;font-weight:600">Sous-répertoire de destination :</label>
+  <select id="moveDlgSelect" style="width:100%;margin-top:6px;padding:8px;border-radius:8px;border:1px solid #3a4150;background:var(--bg);color:var(--text);font-size:14px"></select>
+  <p class="hint">Choisissez un sous-répertoire existant, ou « Nouveau sous-répertoire… » pour en saisir un (créé si besoin).</p>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <button id="moveDlgCancel">Annuler</button>
+    <button class="primary" id="moveDlgOk">Déplacer</button>
+  </div>
+</dialog>
+
 <dialog id="confirmDlg">
   <p id="confirmMsg" style="margin-top:0"></p>
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -919,14 +931,52 @@ async function renameCurrentFile() {
     }
   }
 }
+function existingDirs() {
+  const s = new Set();
+  for (const f of state.files) {
+    const parts = f.path.split("/");
+    for (let i = 1; i < parts.length; i++) s.add(parts.slice(0, i).join("/"));
+  }
+  return [...s].sort((a, b) => a.localeCompare(b, "fr", { numeric: true }));
+}
+function chooseMoveTarget(f) {
+  return new Promise(res => {
+    const dlg = $("moveDlg");
+    $("moveDlgFile").textContent = f.name;
+    const sel = $("moveDlgSelect");
+    sel.innerHTML = "";
+    const cur = (f.dir || "").replace(/\/+$/, "");
+    for (const d of existingDirs()) {
+      const opt = document.createElement("option");
+      opt.value = d;
+      opt.textContent = "📁 " + d;
+      if (d === cur) opt.selected = true;
+      sel.appendChild(opt);
+    }
+    const newOpt = document.createElement("option");
+    newOpt.value = "__new__";
+    newOpt.textContent = "➕ Nouveau sous-répertoire…";
+    sel.appendChild(newOpt);
+    const done = v => { dlg.onclose = null; dlg.close(); res(v); };
+    $("moveDlgOk").onclick = () => done(sel.value);
+    $("moveDlgCancel").onclick = () => done(null);
+    dlg.onclose = () => res(null);
+    dlg.showModal();
+  });
+}
 async function moveCurrentFile() {
   const f = currentVideoFile();
   if (!f || !f.parent) return;
   if (!(await ensureWrite())) return;
   while (true) {
-    const rel = prompt(`Sous-répertoire de destination, relatif à la racine « ${state.root.name} »\n(ex. : vacances/2024 — créé s'il n'existe pas) :`, f.dir || "");
-    if (rel === null) return;
-    const clean = rel.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+    let choice = await chooseMoveTarget(f);
+    if (choice === null) return;
+    if (choice === "__new__") {
+      const rel = prompt(`Nouveau sous-répertoire, relatif à la racine « ${state.root.name} »\n(ex. : vacances/2024) :`);
+      if (rel === null) continue;
+      choice = rel;
+    }
+    const clean = choice.trim().replace(/^\/+/, "").replace(/\/+$/, "");
     if (clean === "") { alert("Chemin invalide."); continue; }
     if (clean === (f.dir || "").replace(/\/+$/, "")) { alert("Le fichier est déjà dans ce répertoire."); continue; }
     try {
