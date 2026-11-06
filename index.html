@@ -184,6 +184,14 @@
   </div>
 </dialog>
 
+<dialog id="confirmDlg">
+  <p id="confirmMsg" style="margin-top:0"></p>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <button class="primary" id="confirmYes">Oui</button>
+    <button id="confirmNo" autofocus>Non</button>
+  </div>
+</dialog>
+
 <script>
 "use strict";
 
@@ -1015,6 +1023,20 @@ async function importTags(file) {
   render();
 }
 
+/* ---------- Confirmation avec défaut « Non » ---------- */
+function askConfirm(msg) {
+  return new Promise(res => {
+    const dlg = $("confirmDlg");
+    $("confirmMsg").textContent = msg;
+    const done = v => { dlg.onclose = null; dlg.close(); res(v); };
+    $("confirmYes").onclick = () => done(true);
+    $("confirmNo").onclick = () => done(false);
+    dlg.onclose = () => res(false);
+    dlg.showModal();
+    $("confirmNo").focus();
+  });
+}
+
 /* ---------- Événements ---------- */
 $("btnPick").onclick = pickRoot;
 $("btnRescan").onclick = scanRoot;
@@ -1061,9 +1083,19 @@ toggle.id = "btnView";
 toggle.textContent = "🖼 Vue mosaïque";
 toggle.classList.add("hidden");
 $("btnRescan").after(toggle);
-toggle.onclick = () => {
-  state.view = state.view === "table" ? "mosaic" : "table";
-  toggle.textContent = state.view === "table" ? "🖼 Vue mosaïque" : "📋 Vue liste";
+toggle.onclick = async () => {
+  if (state.view === "table") {
+    const nb = state.visible.filter(f => VIDEO_EXT.includes(f.ext)).length;
+    if (nb > 100) {
+      const ok = await askConfirm(`Votre sélection concerne ${nb} fichiers. Confirmez-vous le passage en mode mosaïque ?`);
+      if (!ok) return;
+    }
+    state.view = "mosaic";
+    toggle.textContent = "📋 Vue liste";
+  } else {
+    state.view = "table";
+    toggle.textContent = "🖼 Vue mosaïque";
+  }
   render();
 };
 
