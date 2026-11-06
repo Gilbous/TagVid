@@ -880,6 +880,13 @@ async function purgePath(p) {
   await dbDelete("ratings", p);
   await dbDelete("thumbs", p);
 }
+async function getSubDir(rootHandle, rel, create) {
+  let d = rootHandle;
+  for (const seg of rel.split("/")) {
+    if (seg) d = await d.getDirectoryHandle(seg, { create: !!create });
+  }
+  return d;
+}
 async function fileExists(dirHandle, name) {
   try { await dirHandle.getFileHandle(name); return true; } catch (e) { return false; }
 }
@@ -980,7 +987,7 @@ async function moveCurrentFile() {
     if (clean === "") { alert("Chemin invalide."); continue; }
     if (clean === (f.dir || "").replace(/\/+$/, "")) { alert("Le fichier est déjà dans ce répertoire."); continue; }
     try {
-      const targetDir = await state.root.getDirectoryHandle(clean, { create: true });
+      const targetDir = await getSubDir(state.root, clean, true);
       if (await fileExists(targetDir, f.name)) {
         alert(`Un fichier nommé « ${f.name} » existe déjà dans « ${clean} ». Déplacez-le d'abord ou renommez-le.`);
         continue;
