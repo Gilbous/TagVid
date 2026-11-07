@@ -118,7 +118,7 @@
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.21</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.22</span>
 </header>
 
 <main>
@@ -1705,6 +1705,7 @@ toggle.classList.add("hidden");
 $("btnRescan").after(toggle);
 toggle.onclick = () => {
   state.view = state.view === "table" ? "mosaic" : "table";
+  if (state.view === "mosaic") state.mosaicSig = null;
   toggle.textContent = state.view === "table" ? "🖼 Vue mosaïque" : "📋 Vue liste";
   render();
 };
