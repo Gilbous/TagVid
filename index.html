@@ -114,12 +114,11 @@
   <h1>🎬 TagVid</h1>
   <button class="primary" id="btnPick">Choisir le dossier racine</button>
   <button id="btnRescan" class="hidden">Arborescence</button>
-  <button id="btnExport" class="hidden">Exporter les tags (JSON)</button>
+  <button id="btnTagsMgr" class="hidden">💾 Tags</button>
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
-  <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.20</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.21</span>
 </header>
 
 <main>
@@ -205,6 +204,34 @@
   </div>
 </dialog>
 
+<dialog id="tagsDlg">
+  <p style="margin-top:0;font-weight:600;font-size:15px">💾 Gestion des tags et votes</p>
+  <p style="font-size:13px">Racine courante : <b id="tagsDlgRoot"></b></p>
+  <div style="display:flex;align-items:center;gap:8px;font-size:13px">
+    <span>Dossier de sauvegarde :</span>
+    <b id="tagsDlgDir">non défini</b>
+    <button class="small" id="tagsDlgPickDir">Choisir…</button>
+  </div>
+  <p class="hint">Fichier roulant unique par racine : <b>tagvid-&lt;racine&gt;.json</b> (tags + votes).</p>
+  <div style="display:flex;gap:8px;margin-top:10px">
+    <button id="tagsDlgSave">💾 Sauvegarder maintenant</button>
+    <button id="tagsDlgRestore">📂 Restaurer…</button>
+  </div>
+  <div style="margin-top:12px">
+    <label class="mode"><input type="checkbox" id="tagsDlgAuto"> Sauvegarde automatique (2 s après chaque modification)</label>
+  </div>
+  <div style="margin-top:8px">
+    <span style="font-size:13px">Mode de restauration :</span>
+    <label class="mode"><input type="radio" name="importMode" value="merge" checked> Fusion</label>
+    <label class="mode"><input type="radio" name="importMode" value="replace"> Remplacement</label>
+  </div>
+  <p class="hint" id="tagsDlgLast"></p>
+  <p class="hint">Après un redémarrage du navigateur, cliquez une fois sur « Sauvegarder » pour ré-autoriser le dossier.</p>
+  <div style="display:flex;justify-content:flex-end;margin-top:10px">
+    <button id="tagsDlgClose">Fermer</button>
+  </div>
+</dialog>
+
 <dialog id="rootParentDlg">
   <p style="margin-top:0;font-weight:600">🏷 Renommer la racine</p>
   <p style="font-size:13px">Le navigateur ne donne pas accès au dossier parent de la racine.<br>
@@ -261,6 +288,7 @@ const state = {
   collapsed: new Set(),
   dirs: new Map(),
   rootName: "",
+  autoBackup: false,
 };
 const dbKey = p => state.rootName + "\u0000" + p;
 
@@ -371,8 +399,7 @@ async function scanRoot() {
   status("");
   $("empty").classList.add("hidden");
   $("btnRescan").classList.remove("hidden");
-  $("btnExport").classList.remove("hidden");
-  $("btnImport").classList.remove("hidden");
+  $("btnTagsMgr").classList.remove("hidden");
   $("btnThumbs").classList.remove("hidden");
   $("filterBar").classList.remove("hidden");
   $("rootInfo").innerHTML = `Racine : <b>${escapeHtml(state.root.name)}</b> — ${state.files.length} fichiers (${vids} vidéos)`;
@@ -450,6 +477,7 @@ async function setRating(path, n) {
   if (n === null) { state.ratings.delete(path); await dbDelete("ratings", dbKey(path)); }
   else { state.ratings.set(path, n); await dbPut("ratings", dbKey(path), n); }
   updateStars();
+  scheduleAutoBackup();
 }
 async function saveTags(path) {
   const groups = state.tags.get(path);
@@ -785,6 +813,7 @@ function makeTagCell(f, groupSet) {
       for (const s of groups) s.delete(t);
       await saveTags(f.path);
       render();
+      scheduleAutoBackup();
     };
     pill.appendChild(x);
     cell.appendChild(pill);
@@ -980,6 +1009,7 @@ async function submitTagDialog() {
   await saveTags(dlgFile.path);
   $("tagDlg").close();
   render();
+  scheduleAutoBackup();
 }
 
 /* ---------- Opérations disque (suppression, renommage, déplacement) ---------- */
@@ -1018,6 +1048,7 @@ async function purgePath(p) {
   state.ratings.delete(p);
   await dbDelete("ratings", dbKey(p));
   await dbDelete("thumbs", dbKey(p));
+  scheduleAutoBackup();
 }
 async function getSubDir(rootHandle, rel, create) {
   let d = rootHandle;
@@ -1248,24 +1279,77 @@ function closeViewer() {
   $("viewer").classList.remove("open");
 }
 
-/* ---------- Import / export ---------- */
-function exportTags() {
-  const obj = {};
-  for (const [k, v] of state.tags) obj[k] = v.map(s => [...s]);
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "tagvid-tags.json";
-  a.click();
-  URL.revokeObjectURL(a.href);
+/* ---------- Sauvegarde / restauration (tags + votes) ---------- */
+function updateTagsDlg() {
+  if (!$("tagsDlg").open) return;
+  $("tagsDlgRoot").textContent = state.rootName || "—";
+  $("tagsDlgDir").textContent = state.backupDirName || "non défini";
+  $("tagsDlgAuto").checked = state.autoBackup;
+  const last = state.lastSave ? new Date(state.lastSave).toLocaleString("fr-FR") : "";
+  $("tagsDlgLast").textContent = last ? `Dernière sauvegarde : ${last}` : "Aucune sauvegarde pour cette racine.";
 }
-async function importTags(file) {
-  const obj = JSON.parse(await file.text());
-  for (const [k, v] of Object.entries(obj)) {
-    state.tags.set(k, normalizeStored(v));
-    await saveTags(k);
+async function ensureBackupDir() {
+  const dir = await dbGet("meta", "backupDir");
+  if (!dir) return null;
+  let p = "prompt";
+  try { p = await dir.queryPermission({ mode: "readwrite" }); } catch (e) {}
+  if (p !== "granted") {
+    try { p = await dir.requestPermission({ mode: "readwrite" }); } catch (e) { p = "denied"; }
+  }
+  return p === "granted" ? dir : null;
+}
+async function writeBackup(silent) {
+  const dir = await ensureBackupDir();
+  if (!dir) {
+    if (!silent) alert("Aucun dossier de sauvegarde autorisé. Choisissez-le dans la popup 💾 Tags.");
+    return false;
+  }
+  const obj = {
+    app: "TagVid", root: state.rootName, date: new Date().toISOString(),
+    tags: Object.fromEntries([...state.tags].map(([p, g]) => [p, g.map(s => [...s])])),
+    ratings: Object.fromEntries([...state.ratings]),
+  };
+  const fh = await dir.getFileHandle(`tagvid-${state.rootName}.json`, { create: true });
+  const w = await fh.createWritable();
+  await w.write(JSON.stringify(obj, null, 2));
+  await w.close();
+  state.lastSave = obj.date;
+  await dbPut("meta", "lastSave_" + state.rootName, obj.date);
+  updateTagsDlg();
+  return true;
+}
+let autoBackupTimer = null;
+function scheduleAutoBackup() {
+  if (!state.autoBackup) return;
+  clearTimeout(autoBackupTimer);
+  autoBackupTimer = setTimeout(() => writeBackup(true).catch(() => {}), 2000);
+}
+async function restoreBackup(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch (e) { alert("Fichier illisible : " + e.message); return; }
+  if (data.root !== state.rootName) {
+    const ok = await askConfirm(`Cette sauvegarde provient de la racine « ${data.root} » alors que la racine courante est « ${state.rootName} ».\nLes chemins étant relatifs, l'import peut créer des tags orphelins. Importer quand même ?`);
+    if (!ok) return;
+  }
+  const mode = document.querySelector('input[name="importMode"]:checked')?.value || "merge";
+  if (mode === "replace") {
+    for (const p of [...state.tags.keys()]) { state.tags.delete(p); await saveTags(p); }
+    for (const p of [...state.ratings.keys()]) { state.ratings.delete(p); await dbDelete("ratings", dbKey(p)); }
+  }
+  for (const [p, groups] of Object.entries(data.tags || {})) {
+    const g = normalizeStored(groups);
+    const cur = state.tags.get(p) || emptyGroups();
+    for (let i = 0; i < NB_GROUPS; i++) for (const t of g[i]) cur[i].add(t);
+    state.tags.set(p, cur);
+    await saveTags(p);
+  }
+  for (const [p, n] of Object.entries(data.ratings || {})) {
+    if (n >= 1 && n <= 5) { state.ratings.set(p, n); await dbPut("ratings", dbKey(p), n); }
   }
   render();
+  updateTagsDlg();
+  scheduleAutoBackup();
 }
 
 /* ---------- Gestion de l'arborescence (popup) ---------- */
@@ -1320,6 +1404,7 @@ async function migratePrefix(oldDir, newDir) {
   for (const p of paths) {
     if (p.startsWith(oldDir)) await migratePath(p, newDir + p.slice(oldDir.length));
   }
+  scheduleAutoBackup();
 }
 async function migrateRootPrefix(oldRoot, newRoot) {
   const oldPref = oldRoot + "\u0000", newPref = newRoot + "\u0000";
@@ -1534,7 +1619,41 @@ $("rootParentDlgPick").onclick = async () => {
   $("rootParentDlg").close();
   await doRenameRoot(parent);
 };
-$("btnExport").onclick = exportTags;
+$("btnTagsMgr").onclick = async () => {
+  state.backupDirName = (await dbGet("meta", "backupDir"))?.name || null;
+  state.lastSave = await dbGet("meta", "lastSave_" + state.rootName) || null;
+  $("tagsDlg").showModal();
+  updateTagsDlg();
+};
+$("tagsDlgClose").onclick = () => $("tagsDlg").close();
+$("tagsDlgPickDir").onclick = async () => {
+  let dir;
+  try {
+    dir = await window.showDirectoryPicker({ mode: "readwrite" });
+  } catch (e) {
+    if (e.name !== "AbortError") alert("Sélection impossible : " + e.message);
+    return;
+  }
+  await dbPut("meta", "backupDir", dir);
+  state.backupDirName = dir.name;
+  updateTagsDlg();
+};
+$("tagsDlgSave").onclick = async () => {
+  status("Sauvegarde…");
+  const ok = await writeBackup(false).catch(e => { alert("Sauvegarde impossible : " + e.message); return false; });
+  status("");
+  if (ok) status("Sauvegarde effectuée.");
+};
+$("tagsDlgRestore").onclick = () => $("importFile").click();
+$("importFile").onchange = e => { if (e.target.files[0]) restoreBackup(e.target.files[0]).catch(err => alert("Restauration impossible : " + err.message)); e.target.value = ""; };
+$("tagsDlgAuto").onchange = async e => {
+  state.autoBackup = e.target.checked;
+  await dbPut("meta", "autoBackup", state.autoBackup);
+  if (state.autoBackup) scheduleAutoBackup();
+};
+window.addEventListener("beforeunload", () => {
+  if (state.autoBackup) { try { writeBackup(true); } catch (e) {} }
+});
 $("btnThumbs").onclick = async () => {
   if (!confirm("Supprimer toutes les vignettes en cache et les recalculer ?")) return;
   status("Purge des vignettes…");
@@ -1543,8 +1662,6 @@ $("btnThumbs").onclick = async () => {
   status("");
   render();
 };
-$("btnImport").onclick = () => $("importFile").click();
-$("importFile").onchange = e => { if (e.target.files[0]) importTags(e.target.files[0]).catch(err => alert("Import impossible : " + err.message)); };
 $("sortRating").onchange = e => { state.sortByRating = e.target.checked; render(); };
 $("btnResetFilters").onclick = () => {
   state.selected = Array.from({length: NB_GROUPS}, () => new Set());
@@ -1603,6 +1720,7 @@ toggle.onclick = () => {
   const savedRoot = await dbGet("meta", "root");
   state.rootName = savedRoot ? savedRoot.name : "";
   await migrateLegacyTags(state.rootName);
+  state.autoBackup = (await dbGet("meta", "autoBackup")) || false;
   await loadTags();
   await loadRatings();
   state.collapsed = new Set((await dbGet("meta", "collapsed")) || []);
