@@ -110,7 +110,7 @@ async function scanRoot() {
   $("empty").classList.add("hidden");
   $("btnRescan").classList.remove("hidden");
   $("btnTagsMgr").classList.remove("hidden");
-  $("btnThumbs").classList.remove("hidden");
+  $("btnThumbs").classList.toggle("hidden", state.view !== "mosaic");
   $("filterBar").classList.remove("hidden");
   $("rootInfo").innerHTML = `Racine : <b>${escapeHtml(state.root.name)}</b> — ${state.files.length} fichiers (${vids} vidéos)`;
   render();
@@ -1300,10 +1300,11 @@ const toggle = document.createElement("button");
 toggle.id = "btnView";
 toggle.textContent = "🖼 Vue mosaïque";
 toggle.classList.add("hidden");
-$("btnRescan").after(toggle);
+$("btnTagsMgr").after(toggle);
 toggle.onclick = () => {
   state.view = state.view === "table" ? "mosaic" : "table";
   if (state.view === "mosaic") state.mosaicSig = null;
+  $("btnThumbs").classList.toggle("hidden", state.view !== "mosaic");
   toggle.textContent = state.view === "table" ? "🖼 Vue mosaïque" : "📋 Vue liste";
   render();
 };

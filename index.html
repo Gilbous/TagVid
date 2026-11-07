@@ -113,12 +113,12 @@
 <header>
   <h1>🎬 TagVid</h1>
   <button class="primary" id="btnPick">Choisir le dossier racine</button>
-  <button id="btnRescan" class="hidden">Arborescence</button>
+  <button id="btnRescan" class="hidden">📁 Arborescence</button>
   <button id="btnTagsMgr" class="hidden">💾 Tags</button>
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.23</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.24</span>
 </header>
 
 <main>
@@ -218,12 +218,13 @@
     <button id="tagsDlgRestore">📂 Restaurer…</button>
   </div>
   <div style="margin-top:12px">
-    <label class="mode"><input type="checkbox" id="tagsDlgAuto"> Sauvegarde automatique (2 s après chaque modification)</label>
+    <label class="mode" style="display:inline-flex;align-items:center;gap:6px"><input type="checkbox" id="tagsDlgAuto"> Sauvegarde automatique (2 s après chaque modification)</label>
   </div>
-  <div style="margin-top:8px">
+  <div style="margin-top:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <span style="font-size:13px">Mode de restauration :</span>
-    <label class="mode"><input type="radio" name="importMode" value="merge" checked> Fusion</label>
-    <label class="mode"><input type="radio" name="importMode" value="replace"> Remplacement</label>
+    <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="importMode" value="merge" checked> Fusion</label>
+    <span class="hint" style="margin:0">(les tags ajoutés depuis la dernière sauvegarde sont conservés)</span>
+    <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="importMode" value="replace"> Remplacement</label>
   </div>
   <p class="hint" id="tagsDlgLast"></p>
   <p class="hint">Après un redémarrage du navigateur, cliquez une fois sur « Sauvegarder » pour ré-autoriser le dossier.</p>
