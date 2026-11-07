@@ -207,6 +207,7 @@ function render() {
     } else {
       state.view = "table";
       $("btnView").textContent = "🖼 Vue mosaïque";
+      $("btnThumbs").classList.add("hidden");
     }
     render();
   });
@@ -892,7 +893,10 @@ function updateTagsDlg() {
   if (!$("tagsDlg").open) return;
   $("tagsDlgRoot").textContent = state.rootName || "—";
   $("tagsDlgDir").textContent = state.backupDirName || "non défini";
-  $("tagsDlgAuto").checked = state.autoBackup;
+  const rAuto = document.querySelector('input[name="backupMode"][value="auto"]');
+  const rManual = document.querySelector('input[name="backupMode"][value="manual"]');
+  if (rAuto) rAuto.checked = state.autoBackup;
+  if (rManual) rManual.checked = !state.autoBackup;
   const last = state.lastSave ? new Date(state.lastSave).toLocaleString("fr-FR") : "";
   $("tagsDlgLast").textContent = last ? `Dernière sauvegarde : ${last}` : "Aucune sauvegarde pour cette racine.";
 }
@@ -1244,11 +1248,13 @@ $("tagsDlgSave").onclick = async () => {
 };
 $("tagsDlgRestore").onclick = () => $("importFile").click();
 $("importFile").onchange = e => { if (e.target.files[0]) restoreBackup(e.target.files[0]).catch(err => alert("Restauration impossible : " + err.message)); e.target.value = ""; };
-$("tagsDlgAuto").onchange = async e => {
-  state.autoBackup = e.target.checked;
-  await dbPut("meta", "autoBackup", state.autoBackup);
-  if (state.autoBackup) scheduleAutoBackup();
-};
+document.querySelectorAll('input[name="backupMode"]').forEach(r => {
+  r.onchange = async () => {
+    state.autoBackup = r.value === "auto";
+    await dbPut("meta", "autoBackup", state.autoBackup);
+    if (state.autoBackup) scheduleAutoBackup();
+  };
+});
 window.addEventListener("beforeunload", () => {
   if (state.autoBackup) { try { writeBackup(true); } catch (e) {} }
 });

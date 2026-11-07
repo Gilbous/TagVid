@@ -118,7 +118,7 @@
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.26</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.27</span>
 </header>
 
 <main>
@@ -206,30 +206,32 @@
 
 <dialog id="tagsDlg">
   <p style="margin-top:0;font-weight:600;font-size:15px">💾 Gestion des tags et votes</p>
-  <p style="font-size:13px">Racine courante : <b id="tagsDlgRoot"></b></p>
-  <div style="display:flex;align-items:center;gap:8px;font-size:13px">
+  <p style="font-size:13px;margin:10px 0 4px">Racine courante : <b id="tagsDlgRoot"></b></p>
+  <div style="display:flex;align-items:center;gap:8px;font-size:13px;margin:0 0 4px">
     <span>Dossier de sauvegarde :</span>
     <b id="tagsDlgDir">non défini</b>
     <button class="small" id="tagsDlgPickDir">Choisir…</button>
   </div>
-  <p class="hint">Fichier roulant unique par racine : <b>tagvid-&lt;racine&gt;.json</b> (tags + votes).</p>
-  <div style="display:flex;gap:8px;margin-top:10px">
-    <button id="tagsDlgSave">💾 Sauvegarder maintenant</button>
-    <button id="tagsDlgRestore">📂 Restaurer…</button>
-  </div>
-  <div style="margin-top:12px">
+  <div style="margin-top:10px">
     <span style="font-size:13px;font-weight:600">Mode de sauvegarde :</span>
-    <label class="mode" style="display:inline-flex;align-items:center;gap:6px;margin-left:10px"><input type="checkbox" id="tagsDlgAuto"> automatique (2 s après chaque modification)</label>
-    <p class="hint" style="margin-top:4px">Après un redémarrage du navigateur, cliquez une fois sur « Sauvegarder » pour ré-autoriser le dossier.</p>
+    <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:4px">
+      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="backupMode" value="auto"> Automatique <span class="hint" style="margin:0">(2 s après chaque modification)</span></label>
+      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="backupMode" value="manual"> Manuelle <span class="hint" style="margin:0">(par le bouton « Sauvegarder maintenant »)</span></label>
+    </div>
+    <p class="hint" style="margin-top:4px">Après un redémarrage du navigateur, cliquer sur « Autoriser » lors du message d'alerte à la première modification.</p>
   </div>
   <div style="margin-top:8px">
     <span style="font-size:13px;font-weight:600">Mode de restauration :</span>
     <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:4px">
-      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="importMode" value="merge" checked> Fusion <span class="hint" style="margin:0">(les tags ajoutés depuis la dernière sauvegarde sont conservés)</span></label>
-      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="importMode" value="replace"> Remplacement</label>
+      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="importMode" value="merge" checked> Fusion <span class="hint" style="margin:0">(les tags saisis depuis la dernière sauvegarde sont conservés)</span></label>
+      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="importMode" value="replace"> Remplacement <span class="hint" style="margin:0">(retour à l'état de la dernière sauvegarde)</span></label>
     </div>
   </div>
   <p class="hint" id="tagsDlgLast"></p>
+  <div style="display:flex;gap:8px;margin-top:10px">
+    <button id="tagsDlgSave">💾 Sauvegarder maintenant</button>
+    <button id="tagsDlgRestore">📂 Restaurer…</button>
+  </div>
   <div style="display:flex;justify-content:flex-end;margin-top:10px">
     <button id="tagsDlgClose">Fermer</button>
   </div>
@@ -264,7 +266,7 @@
   </div>
 </dialog>
 
-<script src="app-core.js?v=1.26"></script>
-<script src="app.js?v=1.26"></script>
+<script src="app-core.js?v=1.27"></script>
+<script src="app.js?v=1.27"></script>
 </body>
 </html>
