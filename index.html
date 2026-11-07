@@ -101,19 +101,25 @@
   dialog .grow { margin-top: 10px; }
   dialog .grow label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  #treeDlg { width: 620px; max-width: 95vw; }
+  #treeDlgBody { max-height: 60vh; overflow: auto; border: 1px solid #2a303b; border-radius: var(--radius); padding: 6px; margin-top: 10px; }
+  .treerow { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; }
+  .treerow:hover { background: #232833; }
+  .treerow .dname { font-weight: 600; font-size: 13px; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .treerow .dpath { color: var(--muted); font-size: 11px; }
 </style>
 </head>
 <body>
 <header>
   <h1>🎬 TagVid</h1>
   <button class="primary" id="btnPick">Choisir le dossier racine</button>
-  <button id="btnRescan" class="hidden">Recharger l'arborescence</button>
+  <button id="btnRescan" class="hidden">Arborescence</button>
   <button id="btnExport" class="hidden">Exporter les tags (JSON)</button>
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.14</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.15</span>
 </header>
 
 <main>
@@ -199,6 +205,16 @@
   </div>
 </dialog>
 
+<dialog id="treeDlg">
+  <div style="display:flex;align-items:center;gap:10px">
+    <p style="margin:0;font-weight:600;font-size:15px">📁 Gestion de l'arborescence</p>
+    <button class="small" id="treeDlgReload" style="margin-left:auto">🔄 Recharger</button>
+    <button class="small" id="treeDlgClose">Fermer</button>
+  </div>
+  <div id="treeDlgBody"></div>
+  <p class="hint">Renommer ou déplacer un sous-répertoire recopie physiquement son contenu puis supprime l'original. Les tags, votes et vignettes de tous les fichiers concernés sont migrés automatiquement.</p>
+</dialog>
+
 <dialog id="confirmDlg">
   <p id="confirmMsg" style="margin-top:0"></p>
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -232,6 +248,7 @@ const state = {
   visible: [],
   viewerIndex: -1,
   collapsed: new Set(),
+  dirs: new Map(),
 };
 
 const $ = id => document.getElementById(id);
@@ -328,6 +345,7 @@ async function restoreRoot() {
 async function scanRoot() {
   status("Scan en cours…");
   state.files = [];
+  state.dirs = new Map([["", { handle: state.root, parent: null }]]);
   await walk(state.root, "");
   state.files.sort((a, b) => a.path.localeCompare(b.path, "fr", { numeric: true }));
   const vids = state.files.filter(f => VIDEO_EXT.includes(f.ext)).length;
@@ -341,12 +359,14 @@ async function scanRoot() {
   $("rootInfo").innerHTML = `Racine : <b>${escapeHtml(state.root.name)}</b> — ${state.files.length} fichiers (${vids} vidéos)`;
   render();
   $("btnView").classList.remove("hidden");
+  if ($("treeDlg").open) renderTreeDlg();
 }
 
 async function walk(dir, prefix) {
   for await (const [name, handle] of dir.entries()) {
     if (name.startsWith(".")) continue;
     if (handle.kind === "directory") {
+      state.dirs.set(prefix + name + "/", { handle, parent: dir });
       await walk(handle, prefix + name + "/");
     } else {
       let size = 0;
@@ -1188,6 +1208,149 @@ async function importTags(file) {
   render();
 }
 
+/* ---------- Gestion de l'arborescence (popup) ---------- */
+async function dirExists(parentHandle, name) {
+  try { await parentHandle.getDirectoryHandle(name); return true; } catch (e) { return false; }
+}
+async function copyDirRecursive(src, dst) {
+  for await (const [name, h] of src.entries()) {
+    if (h.kind === "file") {
+      await writeBlob(dst, name, await h.getFile());
+    } else {
+      const sub = await dst.getDirectoryHandle(name, { create: true });
+      await copyDirRecursive(h, sub);
+    }
+  }
+}
+async function migratePrefix(oldDir, newDir) {
+  const paths = new Set([...state.tags.keys(), ...state.ratings.keys(), ...(await dbGetAll("thumbs"))]);
+  for (const p of paths) {
+    if (p.startsWith(oldDir)) await migratePath(p, newDir + p.slice(oldDir.length));
+  }
+}
+function renderTreeDlg() {
+  const cont = $("treeDlgBody");
+  cont.innerHTML = "";
+  const dirs = [...state.dirs.keys()].filter(p => p !== "")
+    .sort((a, b) => a.localeCompare(b, "fr", { numeric: true }));
+  if (dirs.length === 0) {
+    cont.innerHTML = '<p class="hint" style="text-align:center">Aucun sous-répertoire scanné (seuls les répertoires contenant des fichiers apparaissent).</p>';
+    return;
+  }
+  for (const p of dirs) {
+    const depth = p.split("/").length - 2;
+    const name = p.slice(0, -1).split("/").pop();
+    const row = document.createElement("div");
+    row.className = "treerow";
+    row.style.paddingLeft = (10 + depth * 16) + "px";
+    const nm = document.createElement("span");
+    nm.className = "dname";
+    nm.textContent = "📁 " + name;
+    const btnR = document.createElement("button");
+    btnR.className = "small"; btnR.textContent = "✏️ Renommer";
+    btnR.onclick = () => renameDir(p);
+    const btnM = document.createElement("button");
+    btnM.className = "small"; btnM.textContent = "📂 Déplacer";
+    btnM.onclick = () => moveDir(p);
+    row.append(nm, btnR, btnM);
+    cont.appendChild(row);
+  }
+}
+async function renameDir(dirPath) {
+  const entry = state.dirs.get(dirPath);
+  if (!entry || !entry.parent) return;
+  const name = dirPath.slice(0, -1).split("/").pop();
+  if (!(await ensureWrite())) return;
+  while (true) {
+    const newName = prompt(`Renommer le sous-répertoire « ${name} » en :`, name);
+    if (!newName || newName === name) return;
+    if (newName.includes("/") || newName.trim() === "") { alert("Nom invalide (vide ou contenant un slash)."); continue; }
+    if (await dirExists(entry.parent, newName)) {
+      alert(`Un sous-répertoire nommé « ${newName} » existe déjà au même niveau. Choisissez un autre nom.`);
+      continue;
+    }
+    try {
+      status("Renommage du répertoire…");
+      const newHandle = await entry.parent.getDirectoryHandle(newName, { create: true });
+      await copyDirRecursive(entry.handle, newHandle);
+      await entry.parent.removeEntry(name, { recursive: true });
+      const newDir = dirPath.slice(0, dirPath.length - name.length) + newName + "/";
+      await migratePrefix(dirPath, newDir);
+      closeViewer();
+      status("");
+      await scanRoot();
+      return;
+    } catch (e) {
+      status("");
+      alert(`Renommage impossible : ${e.message}`);
+      return;
+    }
+  }
+}
+function chooseDirTarget(dirPath) {
+  return new Promise(res => {
+    const dlg = $("moveDlg");
+    $("moveDlgFile").textContent = "Sous-répertoire : " + dirPath;
+    const sel = $("moveDlgSelect");
+    sel.innerHTML = "";
+    const root = document.createElement("option");
+    root.value = "";
+    root.textContent = "📁 (racine)";
+    sel.appendChild(root);
+    for (const d of [...state.dirs.keys()].filter(p => p !== "" && p !== dirPath && !p.startsWith(dirPath))
+      .sort((a, b) => a.localeCompare(b, "fr", { numeric: true }))) {
+      const opt = document.createElement("option");
+      opt.value = d;
+      opt.textContent = "📁 " + d;
+      sel.appendChild(opt);
+    }
+    const newOpt = document.createElement("option");
+    newOpt.value = "__new__";
+    newOpt.textContent = "➕ Nouveau sous-répertoire…";
+    sel.appendChild(newOpt);
+    const done = v => { dlg.onclose = null; dlg.close(); res(v); };
+    $("moveDlgOk").onclick = () => done(sel.value);
+    $("moveDlgCancel").onclick = () => done(null);
+    dlg.onclose = () => res(null);
+    dlg.showModal();
+  });
+}
+async function moveDir(dirPath) {
+  const entry = state.dirs.get(dirPath);
+  if (!entry || !entry.parent) return;
+  const name = dirPath.slice(0, -1).split("/").pop();
+  if (!(await ensureWrite())) return;
+  let choice = await chooseDirTarget(dirPath);
+  if (choice === null) return;
+  if (choice === "__new__") {
+    const rel = prompt(`Nouveau sous-répertoire, relatif à la racine « ${state.root.name} » :`);
+    if (rel === null) return;
+    choice = rel;
+  }
+  const clean = choice.trim().replace(/^\/+/, "").replace(/\/+$/, "");
+  const newDir = (clean === "" ? "" : clean + "/") + name + "/";
+  if (newDir === dirPath) { alert("Le sous-répertoire est déjà à cet endroit."); return; }
+  try {
+    status("Déplacement du répertoire…");
+    const targetDir = clean === "" ? state.root : await getSubDir(state.root, clean, true);
+    if (await dirExists(targetDir, name)) {
+      status("");
+      alert(`Un sous-répertoire nommé « ${name} » existe déjà dans « ${clean || "racine" } ». Renommez le sous-répertoire avant de le déplacer.`);
+      return;
+    }
+    const newHandle = await targetDir.getDirectoryHandle(name, { create: true });
+    await copyDirRecursive(entry.handle, newHandle);
+    await entry.parent.removeEntry(name, { recursive: true });
+    await migratePrefix(dirPath, newDir);
+    closeViewer();
+    status("");
+    await scanRoot();
+  } catch (e) {
+    status("");
+    alert(`Déplacement impossible : ${e.message}`);
+  }
+}
+
 /* ---------- Confirmation avec défaut « Non » ---------- */
 function askConfirm(msg) {
   return new Promise(res => {
@@ -1204,7 +1367,9 @@ function askConfirm(msg) {
 
 /* ---------- Événements ---------- */
 $("btnPick").onclick = pickRoot;
-$("btnRescan").onclick = scanRoot;
+$("btnRescan").onclick = () => { renderTreeDlg(); $("treeDlg").showModal(); };
+$("treeDlgClose").onclick = () => $("treeDlg").close();
+$("treeDlgReload").onclick = () => scanRoot();
 $("btnExport").onclick = exportTags;
 $("btnThumbs").onclick = async () => {
   if (!confirm("Supprimer toutes les vignettes en cache et les recalculer ?")) return;
