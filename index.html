@@ -119,7 +119,7 @@
   <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.19</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.20</span>
 </header>
 
 <main>
@@ -202,6 +202,16 @@
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
     <button id="moveDlgCancel">Annuler</button>
     <button class="primary" id="moveDlgOk">Déplacer</button>
+  </div>
+</dialog>
+
+<dialog id="rootParentDlg">
+  <p style="margin-top:0;font-weight:600">🏷 Renommer la racine</p>
+  <p style="font-size:13px">Le navigateur ne donne pas accès au dossier parent de la racine.<br>
+  Cliquez sur le bouton ci-dessous, puis dans la fenêtre qui s'ouvre, sélectionnez le dossier <b>parent</b> de la racine (celui qui la contient), avec autorisation d'écriture.</p>
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <button id="rootParentDlgCancel">Annuler</button>
+    <button class="primary" id="rootParentDlgPick">Choisir le dossier parent…</button>
   </div>
 </dialog>
 
@@ -1322,23 +1332,14 @@ async function migrateRootPrefix(oldRoot, newRoot) {
     }
   }
 }
-async function renameRoot() {
+async function doRenameRoot(parent) {
   const oldName = state.root.name;
-  if (!(await ensureWrite())) return;
   let newName;
   while (true) {
     newName = prompt(`Renommer le dossier racine « ${oldName} » en :`, oldName);
     if (!newName || newName === oldName) return;
     if (newName.includes("/") || newName.trim() === "") { alert("Nom invalide (vide ou contenant un slash)."); continue; }
     break;
-  }
-  alert(`Le navigateur ne donne pas accès au dossier parent de la racine.\nDans la fenêtre qui s'ouvre, sélectionnez le dossier PARENT de « ${oldName} » (celui qui le contient), avec autorisation d'écriture.`);
-  let parent;
-  try {
-    parent = await window.showDirectoryPicker({ mode: "readwrite" });
-  } catch (e) {
-    if (e.name !== "AbortError") alert("Sélection impossible : " + e.message);
-    return;
   }
   if (!(await dirExists(parent, oldName))) {
     alert(`Le dossier sélectionné ne contient pas « ${oldName} ». Opération annulée — aucun fichier n'a été modifié.`);
@@ -1348,7 +1349,7 @@ async function renameRoot() {
     alert(`Un dossier nommé « ${newName} » existe déjà à cet endroit. Renommez-le ou choisissez un autre nom.`);
     return;
   }
-  const rootHandle = state.dirs.get("")?.handle || state.root;
+  const rootHandle = await parent.getDirectoryHandle(oldName);
   const est = await estimateDir(rootHandle);
   const ok = await askConfirm(`La racine « ${oldName} » contient ${est.count} fichier(s) (${fmtBytes(est.bytes)}).\nDurée estimée : ${est.count === 0 ? "instantanée" : fmtTimeRange(est.bytes)} selon le disque (quasi instantanée si le navigateur gère le déplacement natif).\nConfirmer le renommage en « ${newName} » ?`);
   if (!ok) return;
@@ -1520,7 +1521,19 @@ $("btnPick").onclick = pickRoot;
 $("btnRescan").onclick = () => { renderTreeDlg(); $("treeDlg").showModal(); };
 $("treeDlgClose").onclick = () => $("treeDlg").close();
 $("treeDlgReload").onclick = () => scanRoot();
-$("treeDlgRenameRoot").onclick = renameRoot;
+$("treeDlgRenameRoot").onclick = () => { $("treeDlg").close(); $("rootParentDlg").showModal(); };
+$("rootParentDlgCancel").onclick = () => $("rootParentDlg").close();
+$("rootParentDlgPick").onclick = async () => {
+  let parent;
+  try {
+    parent = await window.showDirectoryPicker({ mode: "readwrite" });
+  } catch (e) {
+    if (e.name !== "AbortError") alert("Sélection impossible : " + e.message);
+    return;
+  }
+  $("rootParentDlg").close();
+  await doRenameRoot(parent);
+};
 $("btnExport").onclick = exportTags;
 $("btnThumbs").onclick = async () => {
   if (!confirm("Supprimer toutes les vignettes en cache et les recalculer ?")) return;
