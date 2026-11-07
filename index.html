@@ -119,7 +119,7 @@
   <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.18</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.19</span>
 </header>
 
 <main>
@@ -208,7 +208,8 @@
 <dialog id="treeDlg">
   <div style="display:flex;align-items:center;gap:10px">
     <p style="margin:0;font-weight:600;font-size:15px">📁 Gestion de l'arborescence</p>
-    <button class="small" id="treeDlgReload" style="margin-left:auto">🔄 Recharger</button>
+    <button class="small" id="treeDlgRenameRoot" style="margin-left:auto">🏷 Renommer la racine</button>
+    <button class="small" id="treeDlgReload">🔄 Recharger</button>
     <button class="small" id="treeDlgClose">Fermer</button>
   </div>
   <div id="treeDlgBody"></div>
@@ -1310,6 +1311,67 @@ async function migratePrefix(oldDir, newDir) {
     if (p.startsWith(oldDir)) await migratePath(p, newDir + p.slice(oldDir.length));
   }
 }
+async function migrateRootPrefix(oldRoot, newRoot) {
+  const oldPref = oldRoot + "\u0000", newPref = newRoot + "\u0000";
+  for (const store of ["tags", "ratings", "thumbs"]) {
+    for (const k of await dbGetAll(store)) {
+      if (!k.startsWith(oldPref)) continue;
+      const v = await dbGet(store, k);
+      await dbPut(store, newPref + k.slice(oldPref.length), v);
+      await dbDelete(store, k);
+    }
+  }
+}
+async function renameRoot() {
+  const oldName = state.root.name;
+  if (!(await ensureWrite())) return;
+  let newName;
+  while (true) {
+    newName = prompt(`Renommer le dossier racine « ${oldName} » en :`, oldName);
+    if (!newName || newName === oldName) return;
+    if (newName.includes("/") || newName.trim() === "") { alert("Nom invalide (vide ou contenant un slash)."); continue; }
+    break;
+  }
+  alert(`Le navigateur ne donne pas accès au dossier parent de la racine.\nDans la fenêtre qui s'ouvre, sélectionnez le dossier PARENT de « ${oldName} » (celui qui le contient), avec autorisation d'écriture.`);
+  let parent;
+  try {
+    parent = await window.showDirectoryPicker({ mode: "readwrite" });
+  } catch (e) {
+    if (e.name !== "AbortError") alert("Sélection impossible : " + e.message);
+    return;
+  }
+  if (!(await dirExists(parent, oldName))) {
+    alert(`Le dossier sélectionné ne contient pas « ${oldName} ». Opération annulée — aucun fichier n'a été modifié.`);
+    return;
+  }
+  if (await dirExists(parent, newName)) {
+    alert(`Un dossier nommé « ${newName} » existe déjà à cet endroit. Renommez-le ou choisissez un autre nom.`);
+    return;
+  }
+  const rootHandle = state.dirs.get("")?.handle || state.root;
+  const est = await estimateDir(rootHandle);
+  const ok = await askConfirm(`La racine « ${oldName} » contient ${est.count} fichier(s) (${fmtBytes(est.bytes)}).\nDurée estimée : ${est.count === 0 ? "instantanée" : fmtTimeRange(est.bytes)} selon le disque (quasi instantanée si le navigateur gère le déplacement natif).\nConfirmer le renommage en « ${newName} » ?`);
+  if (!ok) return;
+  try {
+    status(`Renommage de la racine en « ${newName} »…`);
+    const newHandle = await parent.getDirectoryHandle(newName, { create: true });
+    await smartMoveDir(rootHandle, newHandle, { done: 0, total: est.count, moved: 0 });
+    await parent.removeEntry(oldName, { recursive: true });
+    await migrateRootPrefix(oldName, newName);
+    state.root = newHandle;
+    state.rootName = newName;
+    await dbPut("meta", "root", newHandle);
+    await loadTags();
+    await loadRatings();
+    closeViewer();
+    status("");
+    await scanRoot();
+    renderTreeDlg();
+  } catch (e) {
+    status("");
+    alert(`Renommage de la racine impossible : ${e.message}`);
+  }
+}
 function renderTreeDlg() {
   const cont = $("treeDlgBody");
   cont.innerHTML = "";
@@ -1458,6 +1520,7 @@ $("btnPick").onclick = pickRoot;
 $("btnRescan").onclick = () => { renderTreeDlg(); $("treeDlg").showModal(); };
 $("treeDlgClose").onclick = () => $("treeDlg").close();
 $("treeDlgReload").onclick = () => scanRoot();
+$("treeDlgRenameRoot").onclick = renameRoot;
 $("btnExport").onclick = exportTags;
 $("btnThumbs").onclick = async () => {
   if (!confirm("Supprimer toutes les vignettes en cache et les recalculer ?")) return;
