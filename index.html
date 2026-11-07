@@ -113,7 +113,7 @@
   <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.13</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.14</span>
 </header>
 
 <main>
@@ -876,26 +876,29 @@ async function ensureThumb(f) {
     return { img: null, dur: 0 };
   }
 }
+const FRAMES_VERSION = 2;
 async function ensureFrames(f, e) {
-  if (e.frames) return e;
+  if (e.frames && e.fv === FRAMES_VERSION) return e;
   if (!e.img || !e.dur) return e;
   try {
     const [video, done] = await loadVideoEl(f);
     const frames = [];
-    const step = 30;
-    for (let t = step; t < (video.duration || 0) && frames.length < 30; t += step) {
+    const dur = video.duration || 0;
+    for (let i = 1; i <= 10 && dur > 0; i++) {
+      const t = (dur / 11) * i;
       try { await seekTo(video, t); } catch (err) { break; }
       const canvas = document.createElement("canvas");
-      const w = 160;
+      const w = 240;
       canvas.width = w;
       canvas.height = Math.round(w * (video.videoHeight || 9) / (video.videoWidth || 16));
       canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-      frames.push(canvas.toDataURL("image/jpeg", 0.5));
+      frames.push(canvas.toDataURL("image/jpeg", 0.6));
     }
     done();
     if (frames.length > 0) {
       e.frames = frames;
-      e.dur = e.dur || video.duration || 0;
+      e.fv = FRAMES_VERSION;
+      e.dur = e.dur || dur;
       try { await dbPut("thumbs", f.path, e); } catch (err) {}
     }
     return e;
