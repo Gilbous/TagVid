@@ -120,7 +120,7 @@
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.28</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.29</span>
 </header>
 
 <main>
@@ -236,7 +236,9 @@
   <div style="display:flex;gap:8px;margin-top:10px">
     <button id="tagsDlgSave">💾 Sauvegarder maintenant</button>
     <button id="tagsDlgRestore">📂 Restaurer…</button>
+    <button id="tagsDlgPurge">🧹 Nettoyer les orphelins</button>
   </div>
+  <p class="hint">« Nettoyer les orphelins » supprime les tags et votes des fichiers qui n'existent plus sur le disque.</p>
 </dialog>
 
 <dialog id="rootParentDlg">
@@ -268,7 +270,7 @@
   </div>
 </dialog>
 
-<script src="app-core.js?v=1.28"></script>
-<script src="app.js?v=1.28"></script>
+<script src="app-core.js?v=1.29"></script>
+<script src="app.js?v=1.29"></script>
 </body>
 </html>

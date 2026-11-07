@@ -949,7 +949,10 @@ async function restoreBackup(file) {
     for (const p of [...state.tags.keys()]) { state.tags.delete(p); await saveTags(p); }
     for (const p of [...state.ratings.keys()]) { state.ratings.delete(p); await dbDelete("ratings", dbKey(p)); }
   }
+  const paths = new Set(state.files.map(f => f.path));
+  let skipped = 0;
   for (const [p, groups] of Object.entries(data.tags || {})) {
+    if (!paths.has(p)) { skipped++; continue; }
     const g = normalizeStored(groups);
     const cur = state.tags.get(p) || emptyGroups();
     for (let i = 0; i < NB_GROUPS; i++) for (const t of g[i]) cur[i].add(t);
@@ -957,10 +960,32 @@ async function restoreBackup(file) {
     await saveTags(p);
   }
   for (const [p, n] of Object.entries(data.ratings || {})) {
+    if (!paths.has(p)) { skipped++; continue; }
     if (n >= 1 && n <= 5) { state.ratings.set(p, n); await dbPut("ratings", dbKey(p), n); }
   }
   render();
   updateTagsDlg();
+  scheduleAutoBackup();
+  if (skipped > 0) status(`${skipped} entrée(s) ignorée(s) : fichier(s) absent(s) du disque.`);
+}
+async function purgeOrphans() {
+  const paths = new Set(state.files.map(f => f.path));
+  const pref = state.rootName + "\u0000";
+  let n = 0;
+  for (const p of [...state.tags.keys()]) if (!paths.has(p)) { n++; }
+  for (const p of [...state.ratings.keys()]) if (!paths.has(p)) { n++; }
+  for (const k of (await dbGetAll("thumbs"))) if (k.startsWith(pref) && !paths.has(k.slice(pref.length))) { n++; }
+  if (n === 0) { status("Aucun orphelin à nettoyer."); return; }
+  const ok = await askConfirm(`${n} tag(s)/vote(s)/vignette(s) de fichiers absents du disque seront supprimés.\nConfirmer ?`);
+  if (!ok) return;
+  status("Nettoyage…");
+  let done = 0;
+  for (const p of [...state.tags.keys()]) if (!paths.has(p)) { state.tags.delete(p); await saveTags(p); done++; }
+  for (const p of [...state.ratings.keys()]) if (!paths.has(p)) { state.ratings.delete(p); await dbDelete("ratings", dbKey(p)); done++; }
+  for (const k of (await dbGetAll("thumbs"))) if (k.startsWith(pref) && !paths.has(k.slice(pref.length))) { await dbDelete("thumbs", k); done++; }
+  status("");
+  status(`${done} orphelin(s) supprimé(s).`);
+  render();
   scheduleAutoBackup();
 }
 
@@ -1247,6 +1272,7 @@ $("tagsDlgSave").onclick = async () => {
   if (ok) status("Sauvegarde effectuée.");
 };
 $("tagsDlgRestore").onclick = () => $("importFile").click();
+$("tagsDlgPurge").onclick = purgeOrphans;
 $("importFile").onchange = e => { if (e.target.files[0]) restoreBackup(e.target.files[0]).catch(err => alert("Restauration impossible : " + err.message)); e.target.value = ""; };
 document.querySelectorAll('input[name="backupMode"]').forEach(r => {
   r.onchange = async () => {
