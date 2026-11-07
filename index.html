@@ -119,7 +119,7 @@
   <button id="btnImport" class="hidden">Importer des tags (JSON)</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.15</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.16</span>
 </header>
 
 <main>
@@ -249,7 +249,9 @@ const state = {
   viewerIndex: -1,
   collapsed: new Set(),
   dirs: new Map(),
+  rootName: "",
 };
+const dbKey = p => state.rootName + "\u0000" + p;
 
 const $ = id => document.getElementById(id);
 const status = msg => { $("status").textContent = msg; };
@@ -308,6 +310,9 @@ async function dbClear(store) {
 async function pickRoot() {
   try {
     state.root = await window.showDirectoryPicker({ mode: "read" });
+    state.rootName = state.root.name;
+    await loadTags();
+    await loadRatings();
     await dbPut("meta", "root", state.root);
     await scanRoot();
   } catch (e) {
@@ -337,6 +342,9 @@ async function restoreRoot() {
     return false;
   }
   state.root = saved;
+  state.rootName = saved.name;
+  await loadTags();
+  await loadRatings();
   await scanRoot();
   return true;
 }
@@ -400,29 +408,43 @@ function normalizeStored(v) {
   }
   return groups;
 }
+async function migrateLegacyTags(rootName) {
+  for (const store of ["tags", "ratings", "thumbs"]) {
+    for (const k of await dbGetAll(store)) {
+      if (k.includes("\u0000")) continue;
+      const v = await dbGet(store, k);
+      await dbPut(store, rootName + "\u0000" + k, v);
+      await dbDelete(store, k);
+    }
+  }
+}
 async function loadTags() {
-  const keys = await dbGetAll("tags");
-  for (const k of keys) {
-    state.tags.set(k, normalizeStored(await dbGet("tags", k)));
+  state.tags = new Map();
+  const pref = state.rootName + "\u0000";
+  for (const k of await dbGetAll("tags")) {
+    if (!k.startsWith(pref)) continue;
+    state.tags.set(k.slice(pref.length), normalizeStored(await dbGet("tags", k)));
   }
 }
 async function loadRatings() {
-  const keys = await dbGetAll("ratings");
-  for (const k of keys) {
+  state.ratings = new Map();
+  const pref = state.rootName + "\u0000";
+  for (const k of await dbGetAll("ratings")) {
+    if (!k.startsWith(pref)) continue;
     const v = await dbGet("ratings", k);
-    if (v >= 1 && v <= 5) state.ratings.set(k, v);
+    if (v >= 1 && v <= 5) state.ratings.set(k.slice(pref.length), v);
   }
 }
 async function setRating(path, n) {
-  if (n === null) { state.ratings.delete(path); await dbDelete("ratings", path); }
-  else { state.ratings.set(path, n); await dbPut("ratings", path, n); }
+  if (n === null) { state.ratings.delete(path); await dbDelete("ratings", dbKey(path)); }
+  else { state.ratings.set(path, n); await dbPut("ratings", dbKey(path), n); }
   updateStars();
 }
 async function saveTags(path) {
   const groups = state.tags.get(path);
   const empty = !groups || groups.every(s => s.size === 0);
-  if (empty) await dbDelete("tags", path);
-  else await dbPut("tags", path, groups.map(s => [...s]));
+  if (empty) await dbDelete("tags", dbKey(path));
+  else await dbPut("tags", dbKey(path), groups.map(s => [...s]));
 }
 function tagsOf(path) { return state.tags.get(path) || emptyGroups(); }
 function allTags(g) {
@@ -864,10 +886,10 @@ async function loadVideoEl(f) {
   return [video, () => URL.revokeObjectURL(url)];
 }
 async function ensureThumb(f) {
-  let e = await dbGet("thumbs", f.path);
+  let e = await dbGet("thumbs", dbKey(f.path));
   if (typeof e === "string") {
     e = { img: e, dur: 0 };
-    try { await dbPut("thumbs", f.path, e); } catch (err) {}
+    try { await dbPut("thumbs", dbKey(f.path), e); } catch (err) {}
   }
   if (e && e.img) return e;
   try {
@@ -890,7 +912,7 @@ async function ensureThumb(f) {
     const dur = video.duration || 0;
     done();
     e = { img: canvas.toDataURL("image/jpeg", 0.7), dur };
-    try { await dbPut("thumbs", f.path, e); } catch (err) {}
+    try { await dbPut("thumbs", dbKey(f.path), e); } catch (err) {}
     return e;
   } catch (err) {
     return { img: null, dur: 0 };
@@ -919,7 +941,7 @@ async function ensureFrames(f, e) {
       e.frames = frames;
       e.fv = FRAMES_VERSION;
       e.dur = e.dur || dur;
-      try { await dbPut("thumbs", f.path, e); } catch (err) {}
+      try { await dbPut("thumbs", dbKey(f.path), e); } catch (err) {}
     }
     return e;
   } catch (err) {
@@ -970,21 +992,21 @@ async function migratePath(oldP, newP) {
   if (r !== undefined) {
     state.ratings.set(newP, r);
     state.ratings.delete(oldP);
-    await dbDelete("ratings", oldP);
-    await dbPut("ratings", newP, r);
+    await dbDelete("ratings", dbKey(oldP));
+    await dbPut("ratings", dbKey(newP), r);
   }
-  const th = await dbGet("thumbs", oldP);
+  const th = await dbGet("thumbs", dbKey(oldP));
   if (th) {
-    await dbPut("thumbs", newP, th);
-    await dbDelete("thumbs", oldP);
+    await dbPut("thumbs", dbKey(newP), th);
+    await dbDelete("thumbs", dbKey(oldP));
   }
 }
 async function purgePath(p) {
   state.tags.delete(p);
   await saveTags(p);
   state.ratings.delete(p);
-  await dbDelete("ratings", p);
-  await dbDelete("thumbs", p);
+  await dbDelete("ratings", dbKey(p));
+  await dbDelete("thumbs", dbKey(p));
 }
 async function getSubDir(rootHandle, rel, create) {
   let d = rootHandle;
@@ -1223,7 +1245,9 @@ async function copyDirRecursive(src, dst) {
   }
 }
 async function migratePrefix(oldDir, newDir) {
-  const paths = new Set([...state.tags.keys(), ...state.ratings.keys(), ...(await dbGetAll("thumbs"))]);
+  const pref = state.rootName + "\u0000";
+  const paths = new Set([...state.tags.keys(), ...state.ratings.keys(),
+    ...(await dbGetAll("thumbs")).filter(k => k.startsWith(pref)).map(k => k.slice(pref.length))]);
   for (const p of paths) {
     if (p.startsWith(oldDir)) await migratePath(p, newDir + p.slice(oldDir.length));
   }
@@ -1374,7 +1398,8 @@ $("btnExport").onclick = exportTags;
 $("btnThumbs").onclick = async () => {
   if (!confirm("Supprimer toutes les vignettes en cache et les recalculer ?")) return;
   status("Purge des vignettes…");
-  await dbClear("thumbs");
+  const pref = state.rootName + "\u0000";
+  for (const k of (await dbGetAll("thumbs")).filter(k => k.startsWith(pref))) await dbDelete("thumbs", k);
   status("");
   render();
 };
@@ -1435,6 +1460,9 @@ toggle.onclick = () => {
     return;
   }
   await openDB();
+  const savedRoot = await dbGet("meta", "root");
+  state.rootName = savedRoot ? savedRoot.name : "";
+  await migrateLegacyTags(state.rootName);
   await loadTags();
   await loadRatings();
   state.collapsed = new Set((await dbGet("meta", "collapsed")) || []);
