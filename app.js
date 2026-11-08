@@ -456,6 +456,22 @@ function renderMosaic() {
   for (const f of vids) mosaic.appendChild(makeTile(f));
 }
 
+/* File de génération de vignettes : limite le nombre de vidéos décodées simultanément */
+const thumbQueue = [];
+let thumbActive = 0;
+const THUMB_CONCURRENCY = 2;
+function enqueueThumb(job) {
+  thumbQueue.push(job);
+  pumpThumbs();
+}
+function pumpThumbs() {
+  while (thumbActive < THUMB_CONCURRENCY && thumbQueue.length > 0) {
+    const job = thumbQueue.shift();
+    thumbActive++;
+    Promise.resolve(job()).finally(() => { thumbActive--; pumpThumbs(); });
+  }
+}
+
 function makeTile(f) {
   const tile = document.createElement("div");
   tile.className = "tile";
@@ -473,7 +489,8 @@ function makeTile(f) {
   tile.onclick = () => openViewer(f);
   const durEl = cap.querySelector(".dur");
   let entry = null, anim = null, hovering = false;
-  ensureThumb(f).then(e => {
+  enqueueThumb(async () => {
+    const e = await ensureThumb(f);
     entry = e;
     if (e.img) thumb.innerHTML = `<img src="${e.img}" alt="">`;
     else thumb.textContent = "🎬";
@@ -1285,11 +1302,13 @@ window.addEventListener("beforeunload", () => {
   if (state.autoBackup) { try { writeBackup(true); } catch (e) {} }
 });
 $("btnThumbs").onclick = async () => {
-  if (!confirm("Supprimer toutes les vignettes en cache et les recalculer ?")) return;
-  status("Purge des vignettes…");
-  const pref = state.rootName + "\u0000";
-  for (const k of (await dbGetAll("thumbs")).filter(k => k.startsWith(pref))) await dbDelete("thumbs", k);
-  status("");
+  const full = await askConfirm("Recalculer TOUTES les vignettes de la racine ?\nNon = régénérer uniquement les vignettes manquantes ou en échec.");
+  if (full) {
+    status("Purge des vignettes…");
+    const pref = state.rootName + "\u0000";
+    for (const k of (await dbGetAll("thumbs")).filter(k => k.startsWith(pref))) await dbDelete("thumbs", k);
+    status("");
+  }
   render();
 };
 $("sortRating").onchange = e => { state.sortByRating = e.target.checked; render(); };
