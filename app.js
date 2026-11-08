@@ -62,6 +62,7 @@ async function pickRoot() {
     state.rootName = state.root.name;
     await loadTags();
     await loadRatings();
+    await loadFavorites();
     await dbPut("meta", "root", state.root);
     await scanRoot();
   } catch (e) {
@@ -94,6 +95,7 @@ async function restoreRoot() {
   state.rootName = saved.name;
   await loadTags();
   await loadRatings();
+  await loadFavorites();
   await scanRoot();
   return true;
 }
@@ -235,6 +237,20 @@ function renderGroups() {
   for (let g = 0; g < NB_GROUPS; g++) cont.appendChild(makeGroupPanel(g));
 }
 
+async function saveFavorites() {
+  await dbPut("meta", "favorites_" + state.rootName, [...state.favorites]);
+}
+async function loadFavorites() {
+  state.favorites = new Set((await dbGet("meta", "favorites_" + state.rootName)) || []);
+}
+async function toggleFavorite(t) {
+  const was = state.favorites.has(t);
+  was ? state.favorites.delete(t) : state.favorites.add(t);
+  await saveFavorites();
+  status(was ? `« ${t} » retiré des favoris` : `❤️ « ${t} » ajouté aux favoris`);
+  renderGroups();
+}
+
 function makeGroupPanel(g) {
   const tags = allTags(g);
   const panel = document.createElement("div");
@@ -280,6 +296,15 @@ function makeGroupPanel(g) {
     lblAnd.append(rAnd, " ET");
     tools.append(lblOr, lblAnd);
   }
+  const allBtn = document.createElement("button");
+  allBtn.className = "small";
+  allBtn.textContent = "Tout sélectionner";
+  allBtn.title = "Sélectionner tous les tags visibles de ce groupe";
+  allBtn.onclick = () => {
+    for (const t of visibleTags()) state.selected[g].add(t);
+    render();
+  };
+  tools.appendChild(allBtn);
   const clearBtn = document.createElement("button");
   clearBtn.className = "small";
   clearBtn.textContent = "Effacer la sélection";
@@ -291,12 +316,13 @@ function makeGroupPanel(g) {
     const letters = document.createElement("div");
     letters.className = "letters";
     const present = new Set(tags.map(normalizeKey));
-    const letterList = ["Tous", ...[...present].sort((a, b) => a.localeCompare(b, "fr"))];
+    const letterList = ["Tous", "❤️", ...[...present].sort((a, b) => a.localeCompare(b, "fr"))];
     for (const L of letterList) {
       const s = document.createElement("span");
       s.textContent = L;
       const isOn = L === "Tous" ? state.letterSel[g] === null : state.letterSel[g] === L;
       if (isOn) s.classList.add("on");
+      s.title = L === "❤️" ? "Afficher uniquement les tags favoris" : (L === "Tous" ? "Tous les tags" : L);
       s.onclick = () => {
         state.letterSel[g] = L === "Tous" ? null : L;
         renderGroups();
@@ -311,6 +337,44 @@ function makeGroupPanel(g) {
   chips.className = "chips";
   body.appendChild(chips);
 
+  function visibleTags() {
+    if (g !== 0) return tags;
+    const q = state.groupSearch[g].trim().toLocaleLowerCase("fr");
+    return tags.filter(t => {
+      const okLetter = state.letterSel[g] === null ||
+        (state.letterSel[g] === "❤️" ? state.favorites.has(t) : normalizeKey(t) === state.letterSel[g]);
+      const okSearch = !q || t.toLocaleLowerCase("fr").includes(q);
+      return okLetter && okSearch;
+    });
+  }
+  function makeChip(t) {
+    const el = document.createElement("span");
+    el.className = "chip" + (state.selected[g].has(t) ? " on" : "");
+    const isFav = g === 0 && state.favorites.has(t);
+    if (isFav) {
+      const mark = document.createElement("span");
+      mark.className = "heartmark";
+      mark.textContent = "❤";
+      el.appendChild(mark);
+    }
+    const label = document.createElement("span");
+    label.textContent = t;
+    el.appendChild(label);
+    if (g === 0) {
+      const heart = document.createElement("span");
+      heart.className = "heartbtn";
+      heart.textContent = isFav ? "💔" : "🤍";
+      heart.title = isFav ? "Retirer des favoris" : "Ajouter aux favoris";
+      heart.onclick = e => { e.stopPropagation(); toggleFavorite(t); };
+      el.appendChild(heart);
+      el.oncontextmenu = e => { e.preventDefault(); toggleFavorite(t); };
+    }
+    el.onclick = () => {
+      state.selected[g].has(t) ? state.selected[g].delete(t) : state.selected[g].add(t);
+      render();
+    };
+    return el;
+  }
   function renderChips() {
     chips.innerHTML = "";
     if (g === 0) {
@@ -323,27 +387,24 @@ function makeGroupPanel(g) {
         render();
       };
       chips.appendChild(noTagChip);
+      const favs = tags.filter(t => state.favorites.has(t));
+      if (favs.length > 0 && state.letterSel[g] !== "❤️") {
+        const fz = document.createElement("div");
+        fz.className = "favzone";
+        const lbl = document.createElement("span");
+        lbl.className = "hintline";
+        lbl.textContent = "❤ Favoris";
+        fz.appendChild(lbl);
+        for (const t of favs) fz.appendChild(makeChip(t));
+        chips.appendChild(fz);
+      }
     }
-    const q = state.groupSearch[g].trim().toLocaleLowerCase("fr");
-    const shown = g === 0 ? tags.filter(t => {
-      const okLetter = state.letterSel[g] === null || normalizeKey(t) === state.letterSel[g];
-      const okSearch = !q || t.toLocaleLowerCase("fr").includes(q);
-      return okLetter && okSearch;
-    }) : tags;
+    const shown = visibleTags();
     if (shown.length === 0) {
       chips.innerHTML = `<span class="hintline">${tags.length === 0 ? "Aucun tag dans ce groupe." : "Aucun tag ne correspond."}</span>`;
       return;
     }
-    for (const t of shown) {
-      const el = document.createElement("span");
-      el.className = "chip" + (state.selected[g].has(t) ? " on" : "");
-      el.textContent = t;
-      el.onclick = () => {
-        state.selected[g].has(t) ? state.selected[g].delete(t) : state.selected[g].add(t);
-        render();
-      };
-      chips.appendChild(el);
-    }
+    for (const t of shown) chips.appendChild(makeChip(t));
   }
   renderChips();
   panel.appendChild(body);
@@ -935,6 +996,7 @@ async function writeBackup(silent) {
   }
   const obj = {
     app: "TagVid", root: state.rootName, date: new Date().toISOString(),
+    favorites: [...state.favorites],
     tags: Object.fromEntries([...state.tags].map(([p, g]) => [p, g.map(s => [...s])])),
     ratings: Object.fromEntries([...state.ratings]),
   };
@@ -975,6 +1037,10 @@ async function restoreBackup(file) {
     for (let i = 0; i < NB_GROUPS; i++) for (const t of g[i]) cur[i].add(t);
     state.tags.set(p, cur);
     await saveTags(p);
+  }
+  if (Array.isArray(data.favorites)) {
+    state.favorites = new Set(data.favorites.filter(t => typeof t === "string"));
+    await saveFavorites();
   }
   for (const [p, n] of Object.entries(data.ratings || {})) {
     if (!paths.has(p)) { skipped++; continue; }
@@ -1060,6 +1126,11 @@ async function migrateRootPrefix(oldRoot, newRoot) {
       await dbDelete(store, k);
     }
   }
+  const fav = await dbGet("meta", "favorites_" + oldRoot);
+  if (fav) {
+    await dbPut("meta", "favorites_" + newRoot, fav);
+    await dbDelete("meta", "favorites_" + oldRoot);
+  }
 }
 async function doRenameRoot(parent) {
   const oldName = state.root.name;
@@ -1093,6 +1164,7 @@ async function doRenameRoot(parent) {
     await dbPut("meta", "root", newHandle);
     await loadTags();
     await loadRatings();
+    await loadFavorites();
     closeViewer();
     status("");
     await scanRoot();
@@ -1374,6 +1446,7 @@ toggle.onclick = () => {
   state.autoBackup = (await dbGet("meta", "autoBackup")) || false;
   await loadTags();
   await loadRatings();
+  await loadFavorites();
   state.collapsed = new Set((await dbGet("meta", "collapsed")) || []);
   const ok = await restoreRoot().catch(() => false);
   if (!ok) status("");

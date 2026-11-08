@@ -45,6 +45,11 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip { border-radius: 999px; padding: 5px 12px; font-size: 13px; cursor: pointer; border: 1px solid #3a4150; background: var(--panel); user-select: none; }
   .chip.on { background: var(--accent); color: #0d1117; border-color: var(--accent2); font-weight: 600; }
+  .chip .heartmark { color: #e5484d; margin-right: 2px; }
+  .chip .heartbtn { display: none; cursor: pointer; margin-left: 6px; opacity: .75; }
+  .chip:hover .heartbtn { display: inline; }
+  .favzone { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; margin: 4px 0 8px; border: 1px dashed #4a5160; border-radius: 10px; }
+  .favzone .chip { border-color: #e5484d66; }
   .hintline { font-size: 12px; color: var(--muted); }
 
   /* Listes */
@@ -120,7 +125,7 @@
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.30</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.31</span>
 </header>
 
 <main>
@@ -270,7 +275,7 @@
   </div>
 </dialog>
 
-<script src="app-core.js?v=1.30"></script>
-<script src="app.js?v=1.30"></script>
+<script src="app-core.js?v=1.31"></script>
+<script src="app.js?v=1.31"></script>
 </body>
 </html>

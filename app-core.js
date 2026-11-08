@@ -17,6 +17,7 @@ const state = {
   groupMode: Array(NB_GROUPS).fill("or"),
   noTag: new Set(),
   ratings: new Map(),
+  favorites: new Set(),
   minRating: 0,
   sortByRating: false,
   mosaicPending: false,
