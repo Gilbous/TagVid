@@ -472,7 +472,7 @@ function renderDir(node, depth, tb, durMap) {
       persistCollapsed();
       render();
     };
-    if (!collapsed) renderDir(d, depth + 1, tb);
+    if (!collapsed) renderDir(d, depth + 1, tb, durMap);
   }
   for (const f of node.files) {
     const tr = document.createElement("tr");
