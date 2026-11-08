@@ -280,21 +280,24 @@ function makeGroupPanel(g) {
     search.oninput = () => { state.groupSearch[g] = search.value; renderChips(); };
     tools.appendChild(search);
   } else {
-    const lblOr = document.createElement("label");
-    lblOr.className = "mode";
-    const rOr = document.createElement("input");
-    rOr.type = "radio"; rOr.name = "gmode" + g; rOr.value = "or";
-    rOr.checked = state.groupMode[g] === "or";
-    rOr.onchange = () => { state.groupMode[g] = "or"; render(); };
-    lblOr.append(rOr, " OU");
-    const lblAnd = document.createElement("label");
-    lblAnd.className = "mode";
-    const rAnd = document.createElement("input");
-    rAnd.type = "radio"; rAnd.name = "gmode" + g; rAnd.value = "and";
-    rAnd.checked = state.groupMode[g] === "and";
-    rAnd.onchange = () => { state.groupMode[g] = "and"; render(); };
-    lblAnd.append(rAnd, " ET");
-    tools.append(lblOr, lblAnd);
+    const modeBtn = document.createElement("button");
+    modeBtn.className = "small";
+    const updateModeBtn = () => {
+      const isAnd = state.groupMode[g] === "and";
+      modeBtn.textContent = isAnd ? "Mode : ET" : "Mode : OU";
+      modeBtn.title = isAnd
+        ? "Mode ET : le fichier doit avoir tous les tags sélectionnés. Cliquez pour passer en OU."
+        : "Mode OU : le fichier doit avoir au moins un des tags sélectionnés. Cliquez pour passer en ET.";
+      modeBtn.style.borderColor = isAnd ? "var(--accent)" : "";
+      modeBtn.style.color = isAnd ? "var(--accent)" : "";
+    };
+    modeBtn.onclick = () => {
+      state.groupMode[g] = state.groupMode[g] === "and" ? "or" : "and";
+      updateModeBtn();
+      render();
+    };
+    updateModeBtn();
+    tools.appendChild(modeBtn);
   }
   const allBtn = document.createElement("button");
   allBtn.className = "small";
