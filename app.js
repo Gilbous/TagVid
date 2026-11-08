@@ -419,22 +419,42 @@ async function persistCollapsed() {
   try { await dbPut("meta", "collapsed", [...state.collapsed]); } catch (e) {}
 }
 
-function renderTable() {
+function dbAll(store) {
+  return new Promise((res, rej) => {
+    const out = [];
+    const rq = db.transaction(store).objectStore(store).openCursor();
+    rq.onsuccess = e => {
+      const c = e.target.result;
+      if (c) { out.push([c.key, c.value]); c.continue(); } else res(out);
+    };
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function renderTable() {
   $("mosaic").classList.add("hidden");
   $("tableView").classList.remove("hidden");
+  const pref = state.rootName + "\u0000";
+  const durMap = new Map();
+  try {
+    for (const [k, v] of await dbAll("thumbs")) {
+      if (!k.startsWith(pref)) continue;
+      const dur = v && typeof v === "object" ? v.dur : 0;
+      if (dur) durMap.set(k.slice(pref.length), dur);
+    }
+  } catch (e) {}
   const tb = $("fileList").tBodies[0];
   tb.innerHTML = "";
-  renderDir(buildTree(state.visible), 0, tb);
+  renderDir(buildTree(state.visible), 0, tb, durMap);
 }
 
-function renderDir(node, depth, tb) {
+function renderDir(node, depth, tb, durMap) {
   const dirs = [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, "fr"));
   for (const d of dirs) {
     const collapsed = state.collapsed.has(d.path);
     const tr = document.createElement("tr");
     tr.className = "dirrow";
     const td = document.createElement("td");
-    td.colSpan = 3 + NB_GROUPS;
+    td.colSpan = 5 + NB_GROUPS;
     td.style.paddingLeft = (10 + depth * 18) + "px";
     const arrow = document.createElement("span");
     arrow.className = "darrow";
@@ -464,13 +484,23 @@ function renderDir(node, depth, tb) {
     a.onclick = () => openViewer(f);
     tdName.appendChild(a);
 
+    const tdDur = document.createElement("td");
+    tdDur.textContent = fmtDuration(durMap.get(f.path)) || "—";
+
     const tdSize = document.createElement("td");
     tdSize.textContent = fmtSize(f.size);
 
     const tdVote = document.createElement("td");
     tdVote.innerHTML = starsHTML(state.ratings.get(f.path) || 0, 5);
 
-    tr.append(tdName, tdSize, tdVote);
+    const tdAction = document.createElement("td");
+    const btn = document.createElement("span");
+    btn.className = "addtag";
+    btn.textContent = "🏷";
+    btn.title = "Modifier les tags de ce fichier";
+    btn.onclick = e => { e.stopPropagation(); openTagDialog(f); };
+    tdAction.appendChild(btn);
+    tr.append(tdName, tdDur, tdSize, tdVote, tdAction);
     const groups = tagsOf(f.path);
     for (let g = 0; g < NB_GROUPS; g++) tr.appendChild(makeTagCell(f, groups[g]));
     tb.appendChild(tr);
@@ -501,7 +531,6 @@ function makeTagCell(f, groupSet) {
   const add = document.createElement("span");
   add.className = "addtag"; add.textContent = "+ tag";
   add.onclick = e => { e.stopPropagation(); openTagDialog(f); };
-  cell.appendChild(add);
   td.appendChild(cell);
   return td;
 }
