@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.46";
+const APP_JS_VERSION = "1.47";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -1030,10 +1030,13 @@ async function exportFast(f, start, end, fi, fo) {
   let count = 0;
   const KEY_EVERY = 50;
   await new Promise((resolve, reject) => {
-    const onFrame = () => {
+    let lastT = -1;
+    const onFrame = (now, metadata) => {
       if (exportCancel) { video.pause(); resolve(); return; }
-      const t = video.currentTime;
+      const t = metadata && isFinite(metadata.mediaTime) ? metadata.mediaTime : video.currentTime;
       if (t >= end) { video.pause(); resolve(); return; }
+      if (t <= lastT) { rVFC(); return; }
+      lastT = t;
       const rel = count === 0 ? 0 : t - start;
       let frame;
       if (needCanvas) {
