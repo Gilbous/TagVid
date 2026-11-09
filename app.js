@@ -708,6 +708,248 @@ async function ensureFrames(f, e) {
   }
 }
 
+/* ---------- Modifier : découpe, fondus, export ---------- */
+let editFile = null;
+let exportCancel = false;
+let previewTimer = null;
+
+function openEditDlg() {
+  const f = currentVideoFile();
+  if (!f) return;
+  editFile = f;
+  const v = $("vVideo");
+  $("editDlgName").textContent = f.path;
+  $("editStart").value = 0;
+  $("editEnd").value = (v.duration || 0).toFixed(1);
+  $("editInfo").textContent = `Durée totale : ${fmtDuration(v.duration || 0)} — position actuelle : ${fmtDuration(v.currentTime)}`;
+  $("editProg").style.display = "none";
+  $("editDlg").showModal();
+}
+function editBounds() {
+  const v = $("vVideo");
+  const dur = v.duration || 0;
+  let start = parseFloat($("editStart").value);
+  let end = parseFloat($("editEnd").value);
+  if (!isFinite(start) || start < 0) start = 0;
+  if (!isFinite(end) || end > dur) end = dur;
+  if (end - start < 0.5) end = Math.min(dur, start + 0.5);
+  return { start, end, dur };
+}
+function setEditProgress(p) {
+  $("editProgBar").style.width = Math.round(p * 100) + "%";
+  $("editProgTxt").textContent = `Export en cours… ${Math.round(p * 100)} %`;
+}
+function fadeAlpha(rel, dur, fi, fo) {
+  let a = 1;
+  if (fi > 0 && rel < fi) a *= rel / fi;
+  if (fo > 0 && dur - rel < fo) a *= (dur - rel) / fo;
+  return Math.max(0, Math.min(1, a));
+}
+function bitrateFor(w, h) {
+  return Math.min(12e6, Math.max(8e5, Math.round(w * h * 0.12)));
+}
+async function uniqueName(parent, origName, suffix) {
+  const base = origName.replace(/\.[^.]+$/, "");
+  let name = base + suffix;
+  let n = 2;
+  while (await fileExists(parent, name)) {
+    name = base + "-" + n + suffix;
+    n++;
+  }
+  return name;
+}
+
+async function loadExportVideo(f) {
+  const url = URL.createObjectURL(await f.handle.getFile());
+  const video = document.createElement("video");
+  video.preload = "auto";
+  video.src = url;
+  await new Promise((res, rej) => {
+    video.onloadedmetadata = res;
+    video.onerror = () => rej(new Error("vidéo illisible"));
+    setTimeout(rej, 15000);
+  });
+  return [video, () => URL.revokeObjectURL(url)];
+}
+
+async function exportRealTime(f, start, end, fi, fo) {
+  const [video, done] = await loadExportVideo(f);
+  const w = video.videoWidth, h = video.videoHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  const stream = canvas.captureStream(30);
+  const ac = new AudioContext();
+  const src = ac.createMediaElementSource(video);
+  const gain = ac.createGain();
+  const dest = ac.createMediaStreamDestination();
+  src.connect(gain); gain.connect(dest);
+  stream.addTrack(dest.stream.getAudioTracks()[0]);
+  let mime = "";
+  for (const m of ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]) {
+    if (MediaRecorder.isTypeSupported(m)) { mime = m; break; }
+  }
+  if (!mime) throw new Error("MediaRecorder non disponible");
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitrateFor(w, h) });
+  const chunks = [];
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  const finished = new Promise(res => { rec.onstop = () => res(new Blob(chunks, { type: "video/webm" })); });
+  const dur = end - start;
+  let stopped = false, raf = 0;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    cancelAnimationFrame(raf);
+    try { video.pause(); } catch (e) {}
+    try { rec.stop(); } catch (e) {}
+    try { ac.close(); } catch (e) {}
+    done();
+  };
+  video.onended = stop;
+  rec.start(1000);
+  video.currentTime = start;
+  await video.play();
+  const draw = () => {
+    if (stopped) return;
+    const t = video.currentTime;
+    if (t >= end) { stop(); return; }
+    const rel = t - start;
+    ctx.globalAlpha = 1; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = fadeAlpha(rel, dur, fi, fo);
+    try { ctx.drawImage(video, 0, 0, w, h); } catch (e) {}
+    ctx.globalAlpha = 1;
+    gain.gain.value = fadeAlpha(rel, dur, fi, fo);
+    setEditProgress(rel / dur);
+    if (exportCancel) { stop(); return; }
+    raf = requestAnimationFrame(draw);
+  };
+  draw();
+  const blob = await finished;
+  return exportCancel ? null : blob;
+}
+
+async function exportFast(f, start, end, fi, fo) {
+  if (typeof VideoEncoder === "undefined" || typeof window.WebMMini === "undefined")
+    throw new Error("Export accéléré non supporté par ce navigateur — choisissez « Avec son » (temps réel).");
+  const [video, done] = await loadExportVideo(f);
+  video.muted = true;
+  const w = video.videoWidth, h = video.videoHeight;
+  const config = { codec: "vp8", width: w, height: h, bitrate: bitrateFor(w, h), framerate: 25 };
+  let ok = (await VideoEncoder.isConfigSupported(config)).supported;
+  if (!ok) {
+    config.codec = "vp09.00.10.08";
+    ok = (await VideoEncoder.isConfigSupported(config)).supported;
+  }
+  if (!ok) throw new Error("Aucun encodeur vidéo disponible — choisissez « Avec son » (temps réel).");
+  const codecId = config.codec === "vp8" ? "V_VP8" : "V_VP9";
+  const muxer = new WebMMini.Muxer({ width: w, height: h, codec: codecId });
+  const encoder = new VideoEncoder({
+    output: (chunk) => {
+      const data = new Uint8Array(chunk.byteLength);
+      chunk.copyTo(data);
+      muxer.addFrame(data, chunk.type === "key", chunk.timestamp / 1000);
+    },
+    error: () => {}
+  });
+  encoder.configure(config);
+  const dur = end - start;
+  const needFade = fi > 0 || fo > 0;
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  let count = 0;
+  const KEY_EVERY = 50;
+  await new Promise((resolve, reject) => {
+    const onFrame = () => {
+      if (exportCancel) { video.pause(); resolve(); return; }
+      const t = video.currentTime;
+      if (t >= end) { video.pause(); resolve(); return; }
+      const rel = t - start;
+      let frame;
+      if (needFade) {
+        ctx.globalAlpha = 1; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
+        ctx.globalAlpha = fadeAlpha(rel, dur, fi, fo);
+        ctx.drawImage(video, 0, 0, w, h);
+        ctx.globalAlpha = 1;
+        frame = new VideoFrame(canvas, { timestamp: Math.round(rel * 1e6) });
+      } else {
+        try { frame = new VideoFrame(video, { timestamp: Math.round(rel * 1e6) }); } catch (e) { rVFC(); return; }
+      }
+      try {
+        encoder.encode(frame, { keyFrame: count % KEY_EVERY === 0 });
+      } catch (e) {}
+      frame.close();
+      count++;
+      setEditProgress(rel / dur);
+      if (encoder.encodeQueueSize > 15) {
+        video.pause();
+        const wait = () => {
+          if (exportCancel) { resolve(); return; }
+          if (encoder.encodeQueueSize < 5) video.play().catch(() => {});
+          else setTimeout(wait, 50);
+        };
+        wait();
+      }
+      rVFC();
+    };
+    const rVFC = () => { if (!video.paused && !video.ended) video.requestVideoFrameCallback(onFrame); };
+    video.onended = () => resolve();
+    video.onerror = () => reject(new Error("vidéo illisible"));
+    video.currentTime = start;
+    video.requestVideoFrameCallback(onFrame);
+    video.playbackRate = 16;
+    video.play().catch(reject);
+  });
+  await encoder.flush();
+  encoder.close();
+  done();
+  if (exportCancel) return null;
+  return new Blob([muxer.finalize()], { type: "video/webm" });
+}
+
+async function exportEdited() {
+  if (!editFile) return;
+  const v = $("vVideo");
+  const { start, end } = editBounds();
+  if (end - start < 1) { alert("Sélection trop courte (1 seconde minimum)."); return; }
+  const fi = $("editFadeIn").checked ? Math.max(0.5, parseFloat($("editFadeInS").value) || 1) : 0;
+  const fo = $("editFadeOut").checked ? Math.max(0.5, parseFloat($("editFadeOutS").value) || 1) : 0;
+  const withAudio = (document.querySelector('input[name="editMode"]:checked') || {}).value !== "fast";
+  if (!(await ensureWrite())) return;
+  const newName = await uniqueName(editFile.parent, editFile.name, "-modifiee.webm");
+  exportCancel = false;
+  $("editProg").style.display = "";
+  setEditProgress(0);
+  try {
+    status("Export en cours…");
+    const blob = withAudio
+      ? await exportRealTime(editFile, start, end, fi, fo)
+      : await exportFast(editFile, start, end, fi, fo);
+    status("");
+    if (!blob) { $("editProg").style.display = "none"; status("Export annulé."); return; }
+    await writeBlob(editFile.parent, newName, blob);
+    const newPath = editFile.dir + newName;
+    if (state.tags.has(editFile.path)) { state.tags.set(newPath, state.tags.get(editFile.path)); await saveTags(newPath); }
+    const r = state.ratings.get(editFile.path);
+    if (r !== undefined) { state.ratings.set(newPath, r); await dbPut("ratings", dbKey(newPath), r); }
+    const replace = await askConfirm(`Vidéo exportée : « ${newName} » (${fmtBytes(blob.size)}).\nRemplacer l'original ?\n(Oui = l'original est supprimé. Non = les deux fichiers existent.)`);
+    if (replace) {
+      await editFile.parent.removeEntry(editFile.name);
+      await purgePath(editFile.path);
+    }
+    $("editDlg").close();
+    closeViewer();
+    await scanRoot();
+    status("Export terminé.");
+    scheduleAutoBackup();
+  } catch (e) {
+    status("");
+    alert("Export impossible : " + e.message);
+  } finally {
+    $("editProg").style.display = "none";
+  }
+}
+
 /* ---------- Boîte de dialogue tags ---------- */
 let dlgFile = null;
 function openTagDialog(f) {
@@ -1433,9 +1675,40 @@ for (let g = 0; g < NB_GROUPS; g++) {
 }
 $("vClose").onclick = closeViewer;
 $("vTags").onclick = () => { const f = currentVideoFile(); if (f) openTagDialog(f); };
+$("vEdit").onclick = openEditDlg;
 $("vDelete").onclick = deleteCurrentFile;
-$("vRename").onclick = renameCurrentFile;
-$("vMove").onclick = moveCurrentFile;
+$("editDlgClose").onclick = () => $("editDlg").close();
+$("editDlgCancel").onclick = () => $("editDlg").close();
+$("editMarkStart").onclick = () => {
+  const t = $("vVideo").currentTime;
+  $("editStart").value = t.toFixed(1);
+  const { end } = editBounds();
+  if (end <= t) $("editEnd").value = Math.min(($("vVideo").duration || 0), t + 1).toFixed(1);
+};
+$("editMarkEnd").onclick = () => {
+  const t = $("vVideo").currentTime;
+  $("editEnd").value = t.toFixed(1);
+  const { start } = editBounds();
+  if (start >= t) $("editStart").value = Math.max(0, t - 1).toFixed(1);
+};
+$("editReset").onclick = () => {
+  $("editStart").value = 0;
+  $("editEnd").value = ($("vVideo").duration || 0).toFixed(1);
+};
+$("editPreview").onclick = () => {
+  const { start, end } = editBounds();
+  const v = $("vVideo");
+  clearInterval(previewTimer);
+  v.currentTime = start;
+  v.play().catch(() => {});
+  previewTimer = setInterval(() => {
+    if (v.currentTime >= end || v.ended) { v.pause(); clearInterval(previewTimer); }
+  }, 100);
+};
+$("editExport").onclick = exportEdited;
+$("editCancel").onclick = () => { exportCancel = true; };
+$("editRename").onclick = renameCurrentFile;
+$("editMove").onclick = moveCurrentFile;
 $("vPrev").onclick = () => viewerStep(-1);
 $("vNext").onclick = () => viewerStep(1);
 $("vBack30").onclick = () => seekVideo(-30);

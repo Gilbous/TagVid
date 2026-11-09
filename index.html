@@ -125,7 +125,7 @@
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.35</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.36</span>
 </header>
 
 <main>
@@ -170,8 +170,7 @@
     <div class="vnav">
       <span class="stars" id="vStars" title="Voter : cliquez sur une étoile (recliquez pour retirer)"></span>
       <button id="vTags">🏷 Tags</button>
-      <button id="vRename" title="Renommer le fichier sur le disque">✏️ Renommer</button>
-      <button id="vMove" title="Déplacer le fichier dans un sous-répertoire de la racine">📂 Déplacer</button>
+      <button id="vEdit" title="Découper, renommer ou déplacer ce fichier">✂️ Modifier</button>
       <button id="vDelete" title="Supprimer définitivement le fichier du disque" style="border-color:var(--danger);color:var(--danger)">🗑 Supprimer</button>
       <button id="vPrev">⏮ Précédent</button>
       <button class="seekbtn" id="vBack30" title="Reculer de 30 s">« 30 s</button>
@@ -184,6 +183,55 @@
   </div>
   <div class="vwrap"><video id="vVideo" controls autoplay></video></div>
 </div>
+
+<dialog id="editDlg">
+  <div style="display:flex;align-items:center;gap:10px">
+    <p style="margin:0;font-weight:600;font-size:15px">✂️ Modifier</p>
+    <button class="small" id="editDlgClose" style="margin-left:auto">Fermer</button>
+  </div>
+  <p id="editDlgName" style="font-size:12px;color:var(--muted);word-break:break-all;margin:8px 0"></p>
+  <div style="display:flex;gap:6px;border-bottom:1px solid #2a303b;margin-bottom:10px">
+    <span id="editTabCut" style="padding:6px 12px;font-weight:600;font-size:13px;border-bottom:2px solid var(--accent)">Découpe</span>
+    <span id="editTabImg" style="padding:6px 12px;font-size:13px;color:var(--muted);cursor:not-allowed" title="Disponible en v1.37">Image</span>
+  </div>
+  <div style="font-size:13px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <button class="small" id="editMarkStart">⏱ Début ici</button>
+      <input type="number" id="editStart" min="0" step="0.1" style="width:80px;padding:4px"> s
+      <button class="small" id="editMarkEnd">⏹ Fin ici</button>
+      <input type="number" id="editEnd" min="0" step="0.1" style="width:80px;padding:4px"> s
+    </div>
+    <p class="hint" id="editInfo" style="margin:6px 0"></p>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="small" id="editPreview">▶ Lire la sélection</button>
+      <button class="small" id="editReset">⟲ Réinitialiser</button>
+    </div>
+    <div style="margin-top:10px;font-weight:600">Fondus</div>
+    <div style="display:flex;gap:16px;margin-top:4px;flex-wrap:wrap">
+      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="editFadeIn"> Ouverture <input type="number" id="editFadeInS" value="1" min="0.5" step="0.5" style="width:56px;padding:4px"> s</label>
+      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="editFadeOut"> Fermeture <input type="number" id="editFadeOutS" value="1" min="0.5" step="0.5" style="width:56px;padding:4px"> s</label>
+    </div>
+    <div style="margin-top:10px;font-weight:600">Export</div>
+    <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:4px">
+      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="editMode" value="audio" checked> Avec son <span class="hint" style="margin:0">(temps réel — durée ≈ durée de la sélection)</span></label>
+      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="editMode" value="fast"> Sans son <span class="hint" style="margin:0">(accéléré — expérimental)</span></label>
+    </div>
+    <p class="hint">L'export produit un nouveau vidéo .webm dans le même répertoire ; l'original n'est supprimé que si vous confirmez le remplacement.</p>
+  </div>
+  <div id="editProg" style="display:none;margin-top:12px">
+    <div style="background:#2a303b;border-radius:6px;height:14px;overflow:hidden"><div id="editProgBar" style="background:var(--accent);height:100%;width:0%"></div></div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+      <span class="hint" id="editProgTxt" style="margin:0"></span>
+      <button class="small" id="editCancel" style="margin-left:auto">Annuler l'export</button>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+    <button class="primary" id="editExport">💾 Exporter la vidéo modifiée</button>
+    <button id="editRename">✏️ Renommer</button>
+    <button id="editMove">📂 Déplacer</button>
+    <button id="editDlgCancel">Annuler</button>
+  </div>
+</dialog>
 
 <dialog id="tagDlg">
   <p style="margin-top:0;font-weight:600">Tags du fichier</p>
@@ -275,7 +323,8 @@
   </div>
 </dialog>
 
-<script src="app-core.js?v=1.35"></script>
-<script src="app.js?v=1.35"></script>
+<script src="libs/webm-mini.js?v=1.36"></script>
+<script src="app-core.js?v=1.36"></script>
+<script src="app.js?v=1.36"></script>
 </body>
 </html>
