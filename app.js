@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.47";
+const APP_JS_VERSION = "1.48";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -964,6 +964,89 @@ async function exportRealTime(f, start, end, fi, fo) {
   return exportCancel ? null : blob;
 }
 
+/* Export instantané : remux sans réencodage via mp4box (qualité identique, son conservé) */
+async function exportRemux(f, start, end, fi, fo) {
+  if (typeof window.MP4Box === "undefined")
+    throw new Error("mp4box.all.js n'est pas chargé — vérifiez le dossier libs/.");
+  if (typeof window.Mp4Muxer === "undefined")
+    throw new Error("mp4-muxer.js n'est pas chargé — vérifiez le dossier libs/.");
+  const file = await f.handle.getFile();
+  const buf = await file.arrayBuffer();
+  buf.fileStart = 0;
+  const box = MP4Box.createFile();
+  const info = await new Promise((resolve, reject) => {
+    box.onReady = resolve;
+    box.onError = e => reject(new Error("MP4 illisible : " + e));
+    box.appendBuffer(buf);
+  });
+  const vt = (info.videoTracks || [])[0];
+  if (!vt) throw new Error("Aucune piste vidéo — le mode instantané ne s'applique qu'aux fichiers MP4.");
+  const at = (info.audioTracks || [])[0];
+  const trak = box.getTrackById(vt.id);
+  const entry = trak.mdia.minf.stbl.stsd.entries[0];
+  if (!entry.avcC) throw new Error("La vidéo n'est pas en H.264 — utilisez le mode temps réel.");
+  const desc = new Uint8Array(entry.avcC.data);
+  const codec = "avc1." + [1, 2, 3].map(i => desc[i].toString(16).padStart(2, "0")).join("");
+  const decoderConfig = { codec, description: desc };
+  const audioOk = !!(at && at.codec && at.codec.startsWith("mp4a") && at.audio && at.audio.sample_rate);
+  const muxer = new Mp4Muxer.Muxer({
+    target: new Mp4Muxer.ArrayBufferTarget(),
+    video: { codec: "avc", width: vt.video.width, height: vt.video.height },
+    ...(audioOk ? { audio: { codec: "aac", numberOfChannels: at.audio.channel_count || 2, sampleRate: at.audio.sample_rate } } : {}),
+    fastStart: "in-memory",
+    firstTimestampBehavior: "cross-track-offset",
+  });
+  let vStarted = false, vStartSec = null, vDone = false, aDone = !audioOk;
+  let vCount = 0, aCount = 0, muxError = null;
+  const vTotal = vt.nb_samples || 1, aTotal = at ? (at.nb_samples || 1) : 0;
+  await new Promise((resolve, reject) => {
+    box.onSamples = (id, user, samps) => {
+      try {
+        if (id === vt.id) {
+          for (const s of samps) {
+            if (vDone || exportCancel) break;
+            const sec = s.dts / vt.timescale;
+            if (!vStarted) {
+              if ((s.is_sync || s.is_rap) && sec >= start) { vStarted = true; vStartSec = sec; }
+              else continue;
+            }
+            if (sec >= end) { vDone = true; break; }
+            const ts = s.dts / vt.timescale * 1e6;
+            const dur = (s.duration || 0) / vt.timescale * 1e6;
+            const cto = ((s.cts || s.dts) - s.dts) / vt.timescale * 1e6;
+            muxer.addVideoChunkRaw(new Uint8Array(s.data), (s.is_sync || s.is_rap) ? "key" : "delta", ts, dur, { decoderConfig }, cto);
+            vCount++;
+          }
+          setEditProgress(Math.min(0.99, vCount / vTotal));
+          if (vCount >= vTotal) vDone = true;
+        } else if (at && id === at.id) {
+          for (const s of samps) {
+            if (aDone || exportCancel) break;
+            const sec = s.dts / at.timescale;
+            if (vStartSec === null || sec < vStartSec - 0.05) continue;
+            if (sec >= end) { aDone = true; break; }
+            const ts = s.dts / at.timescale * 1e6;
+            const dur = (s.duration || 0) / at.timescale * 1e6;
+            muxer.addAudioChunkRaw(new Uint8Array(s.data), "key", ts, dur);
+            aCount++;
+          }
+          if (aCount >= aTotal) aDone = true;
+        }
+        if (exportCancel || (vDone && aDone)) resolve();
+      } catch (e) { muxError = e; resolve(); }
+    };
+    box.setExtractionOptions(vt.id, null, { nbSamples: 50 });
+    if (at) box.setExtractionOptions(at.id, null, { nbSamples: 500 });
+    box.start();
+  });
+  if (muxError) throw new Error("Remux : " + muxError.message);
+  if (exportCancel) return null;
+  if (vCount === 0) throw new Error("Aucune frame dans la sélection (début après la dernière image-clé ?).");
+  if (audioOk && aCount === 0) status("Note : la piste audio n'a pas pu être incluse.");
+  muxer.finalize();
+  return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), ext: "mp4" };
+}
+
 async function exportFast(f, start, end, fi, fo) {
   if (typeof VideoEncoder === "undefined")
     throw new Error("L'encodeur WebCodecs (VideoEncoder) n'est pas disponible dans ce navigateur — choisissez « Avec son » (temps réel).");
@@ -1112,6 +1195,12 @@ async function exportEdited() {
     if (withAudio) {
       const blob = await exportRealTime(editFile, start, end, fi, fo);
       result = blob ? { blob, ext: blob.type.includes("mp4") ? "mp4" : "webm" } : null;
+    } else if (typeof window.MP4Box !== "undefined" && typeof window.Mp4Muxer !== "undefined") {
+      if (fi > 0 || fo > 0) {
+        const ok = await askConfirm("Les fondus ne sont pas applicables au mode instantané (sans réencodage).\\nContinuer sans fondus ?");
+        if (!ok) { $("editProg").style.display = "none"; return; }
+      }
+      result = await exportRemux(editFile, start, end, fi, fo);
     } else {
       result = await exportFast(editFile, start, end, fi, fo);
     }

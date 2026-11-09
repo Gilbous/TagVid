@@ -125,7 +125,7 @@
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.47</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.48</span>
 </header>
 
 <main>
@@ -228,10 +228,10 @@
       </select>
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:4px">
-      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="editMode" value="audio" checked> Avec son <span class="hint" style="margin:0">(temps réel — durée ≈ durée de la sélection)</span></label>
-      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="editMode" value="fast"> Sans son <span class="hint" style="margin:0">(accéléré — expérimental)</span></label>
+      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="editMode" value="audio" checked> Avec son <span class="hint" style="margin:0">(temps réel — réencodage, fondus possibles)</span></label>
+      <label class="mode" style="display:inline-flex;align-items:center;gap:4px"><input type="radio" name="editMode" value="fast"> Instantané <span class="hint" style="margin:0">(sans réencodage — qualité identique, son conservé, coupe alignée à l'image-clé suivante)</span></label>
     </div>
-    <p class="hint">L'export produit un nouveau vidéo .webm dans le même répertoire ; l'original n'est supprimé que si vous confirmez le remplacement.</p>
+    <p class="hint">L'export produit un nouveau fichier dans le même répertoire ; l'original n'est supprimé que si vous confirmez le remplacement. Le mode Instantané exige un fichier MP4 (H.264) et les librairies mp4box.all.js + mp4-muxer.js dans libs/.</p>
   </div>
   <div id="editProg" style="display:none;margin-top:12px">
     <div style="background:#2a303b;border-radius:6px;height:14px;overflow:hidden"><div id="editProgBar" style="background:var(--accent);height:100%;width:0%"></div></div>
@@ -338,9 +338,9 @@
   </div>
 </dialog>
 
-<script src="libs/mp4-muxer.js?v=1.41" onerror="var __m=document.createElement('script');__m.src='mp4-muxer.js?v=1.41';document.head.appendChild(__m);"></script>
-<script src="libs/webm-mini.js?v=1.41" onerror="var __s=document.createElement('script');__s.src='webm-mini.js?v=1.41';document.head.appendChild(__s);"></script>
-<script src="app-core.js?v=1.47"></script>
-<script src="app.js?v=1.47"></script>
+<script src="libs/mp4-muxer.js?v=1.48" onerror="var __m=document.createElement('script');__m.src='mp4-muxer.js?v=1.48';document.head.appendChild(__m);"></script>
+<script src="libs/webm-mini.js?v=1.48" onerror="var __s=document.createElement('script');__s.src='webm-mini.js?v=1.48';document.head.appendChild(__s);"></script>
+<script src="app-core.js?v=1.48"></script>
+<script src="app.js?v=1.48"></script>
 </body>
 </html>
