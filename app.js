@@ -868,7 +868,7 @@ function fadeAlpha(rel, dur, fi, fo) {
   return Math.max(0, Math.min(1, a));
 }
 function bitrateFor(w, h) {
-  return Math.min(12e6, Math.max(8e5, Math.round(w * h * 0.12)));
+  return Math.min(20e6, Math.max(2e6, Math.round(w * h * 0.3)));
 }
 async function uniqueName(parent, origName, suffix) {
   const base = origName.replace(/\.[^.]+$/, "");
@@ -951,29 +951,55 @@ async function exportRealTime(f, start, end, fi, fo) {
 }
 
 async function exportFast(f, start, end, fi, fo) {
-  if (typeof window.WebMMini === "undefined")
-    throw new Error("Librairie libs/webm-mini.js introuvable — vérifiez que le dossier libs/ (contenant webm-mini.js) est présent à côté de index.html.");
   if (typeof VideoEncoder === "undefined")
     throw new Error("L'encodeur WebCodecs (VideoEncoder) n'est pas disponible dans ce navigateur — choisissez « Avec son » (temps réel).");
+  const useMp4 = typeof window.Mp4Muxer !== "undefined";
+  if (!useMp4 && typeof window.WebMMini === "undefined")
+    throw new Error("Ni mp4-muxer ni webm-mini.js ne sont chargés — choisissez « Avec son » (temps réel).");
   const [video, done] = await loadExportVideo(f);
   video.muted = true;
   const w = video.videoWidth, h = video.videoHeight;
-  const config = { codec: "vp8", width: w, height: h, bitrate: bitrateFor(w, h), framerate: 25 };
-  let ok = (await VideoEncoder.isConfigSupported(config)).supported;
-  if (!ok) {
-    config.codec = "vp09.00.10.08";
+  let config, ok;
+  if (useMp4) {
+    config = { codec: "avc1.640028", width: w, height: h, bitrate: bitrateFor(w, h), framerate: 25, avc: { format: "avc" } };
     ok = (await VideoEncoder.isConfigSupported(config)).supported;
+    if (!ok) {
+      config.codec = "avc1.42001f";
+      ok = (await VideoEncoder.isConfigSupported(config)).supported;
+    }
+    if (!ok) throw new Error("Aucun encodeur H.264 disponible — choisissez « Avec son » (temps réel).");
+  } else {
+    config = { codec: "vp8", width: w, height: h, bitrate: bitrateFor(w, h), framerate: 25 };
+    ok = (await VideoEncoder.isConfigSupported(config)).supported;
+    if (!ok) {
+      config.codec = "vp09.00.10.08";
+      ok = (await VideoEncoder.isConfigSupported(config)).supported;
+    }
+    if (!ok) throw new Error("Aucun encodeur vidéo disponible — choisissez « Avec son » (temps réel).");
   }
-  if (!ok) throw new Error("Aucun encodeur vidéo disponible — choisissez « Avec son » (temps réel).");
-  const codecId = config.codec === "vp8" ? "V_VP8" : "V_VP9";
-  const muxer = new WebMMini.Muxer({ width: w, height: h, codec: codecId });
+  let muxer;
+  if (useMp4) {
+    muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: "avc", width: w, height: h },
+      fastStart: "in-memory",
+    });
+  } else {
+    const codecId = config.codec === "vp8" ? "V_VP8" : "V_VP9";
+    muxer = new WebMMini.Muxer({ width: w, height: h, codec: codecId });
+  }
+  let encoderError = null;
   const encoder = new VideoEncoder({
-    output: (chunk) => {
-      const data = new Uint8Array(chunk.byteLength);
-      chunk.copyTo(data);
-      muxer.addFrame(data, chunk.type === "key", chunk.timestamp / 1000);
+    output: (chunk, meta) => {
+      if (useMp4) {
+        muxer.addVideoChunk(chunk, meta);
+      } else {
+        const data = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(data);
+        muxer.addFrame(data, chunk.type === "key", chunk.timestamp / 1000);
+      }
     },
-    error: () => {}
+    error: e => { encoderError = e; }
   });
   encoder.configure(config);
   const dur = end - start;
@@ -1027,8 +1053,13 @@ async function exportFast(f, start, end, fi, fo) {
   await encoder.flush();
   encoder.close();
   done();
+  if (encoderError) throw new Error("Encodeur : " + encoderError.message);
   if (exportCancel) return null;
-  return new Blob([muxer.finalize()], { type: "video/webm" });
+  if (useMp4) {
+    muxer.finalize();
+    return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), ext: "mp4" };
+  }
+  return { blob: new Blob([muxer.finalize()], { type: "video/webm" }), ext: "webm" };
 }
 
 async function exportEdited() {
@@ -1040,17 +1071,22 @@ async function exportEdited() {
   const fo = $("editFadeOut").checked ? Math.max(0.5, parseFloat($("editFadeOutS").value) || 1) : 0;
   const withAudio = (document.querySelector('input[name="editMode"]:checked') || {}).value !== "fast";
   if (!(await ensureWrite())) return;
-  const newName = await uniqueName(editFile.parent, editFile.name, "-modifiee.webm");
   exportCancel = false;
   $("editProg").style.display = "";
   setEditProgress(0);
   try {
     status("Export en cours…");
-    const blob = withAudio
-      ? await exportRealTime(editFile, start, end, fi, fo)
-      : await exportFast(editFile, start, end, fi, fo);
+    let result;
+    if (withAudio) {
+      const blob = await exportRealTime(editFile, start, end, fi, fo);
+      result = blob ? { blob, ext: "webm" } : null;
+    } else {
+      result = await exportFast(editFile, start, end, fi, fo);
+    }
     status("");
-    if (!blob) { $("editProg").style.display = "none"; status("Export annulé."); return; }
+    if (!result || !result.blob) { $("editProg").style.display = "none"; status("Export annulé."); return; }
+    const blob = result.blob;
+    const newName = await uniqueName(editFile.parent, editFile.name, "-modifiee." + result.ext);
     await writeBlob(editFile.parent, newName, blob);
     const newPath = editFile.dir + newName;
     if (state.tags.has(editFile.path)) { state.tags.set(newPath, state.tags.get(editFile.path)); await saveTags(newPath); }
