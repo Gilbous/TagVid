@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.52";
+const APP_JS_VERSION = "1.53";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -877,6 +877,7 @@ function openEditPanel() {
   $("editBright").value = 1; $("editBrightVal").textContent = "100 %";
   $("editContrast").value = 1; $("editContrastVal").textContent = "100 %";
   $("editProg").style.display = "none";
+  $("editPreviewBox").style.display = "none";
   $("viewer").classList.add("editing");
   $("editPanel").classList.remove("hidden");
   $("cutBar").classList.remove("hidden");
@@ -1140,6 +1141,117 @@ async function exportRemux(f, start, end, fi, fo) {
   return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), ext: "mp4" };
 }
 
+/* Export MP4 avec réglages d'image : vidéo réencodée (filtres) + audio copié sans réencodage */
+async function exportFilterMp4(f, start, end) {
+  if (typeof VideoEncoder === "undefined") throw new Error("WebCodecs indisponible dans ce navigateur.");
+  if (typeof window.Mp4Muxer === "undefined") throw new Error("mp4-muxer.js absent du dossier libs/.");
+  const filter = `brightness(${$("editBright").value}) contrast(${$("editContrast").value})`;
+  let box = null, at = null;
+  if (typeof window.MP4Box !== "undefined") {
+    try {
+      const file = await f.handle.getFile();
+      const buf = await file.arrayBuffer();
+      buf.fileStart = 0;
+      box = MP4Box.createFile();
+      const info = await new Promise((res, rej) => { box.onReady = res; box.onError = () => rej(new Error("MP4 illisible")); box.appendBuffer(buf); });
+      at = (info.audioTracks || [])[0];
+      if (!(at && at.codec && at.codec.startsWith("mp4a") && at.audio && at.audio.sample_rate)) at = null;
+    } catch (e) { box = null; at = null; }
+  }
+  const [video, done] = await loadExportVideo(f);
+  video.muted = true;
+  const w = video.videoWidth - (video.videoWidth % 2), h = video.videoHeight - (video.videoHeight % 2);
+  const config = { codec: "avc1.640028", width: w, height: h, bitrate: bitrateFor(w, h), framerate: 25, avc: { format: "avc" } };
+  let ok = (await VideoEncoder.isConfigSupported(config)).supported;
+  if (!ok) { config.codec = "avc1.42001f"; ok = (await VideoEncoder.isConfigSupported(config)).supported; }
+  if (!ok) throw new Error("Aucun encodeur H.264 disponible.");
+  const muxer = new Mp4Muxer.Muxer({
+    target: new Mp4Muxer.ArrayBufferTarget(),
+    video: { codec: "avc", width: w, height: h },
+    ...(at ? { audio: { codec: "aac", numberOfChannels: at.audio.channel_count || 2, sampleRate: at.audio.sample_rate } } : {}),
+    fastStart: "in-memory",
+    firstTimestampBehavior: "cross-track-offset",
+  });
+  let encoderError = null, chunks = 0;
+  const encoder = new VideoEncoder({
+    output: (c, meta) => { try { muxer.addVideoChunk(c, meta); chunks++; } catch (e) { encoderError = e; } },
+    error: e => { encoderError = e; },
+  });
+  encoder.configure(config);
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  const dur = end - start;
+  let count = 0, lastT = -1;
+  await new Promise((resolve, reject) => {
+    const onFrame = (now, metadata) => {
+      if (exportCancel) { video.pause(); resolve(); return; }
+      const t = metadata && isFinite(metadata.mediaTime) ? metadata.mediaTime : video.currentTime;
+      if (t >= end) { video.pause(); resolve(); return; }
+      if (t > lastT) {
+        lastT = t;
+        const rel = count === 0 ? 0 : t - start;
+        ctx.filter = filter;
+        try { ctx.drawImage(video, 0, 0, w, h); } catch (e) {}
+        ctx.filter = "none";
+        const frame = new VideoFrame(canvas, { timestamp: Math.round(rel * 1e6), duration: 40000 });
+        try { encoder.encode(frame, { keyFrame: count % 50 === 0 }); } catch (e) {}
+        frame.close();
+        count++;
+        setEditProgress(Math.min(0.99, Math.max(0, (t - start) / Math.max(0.1, dur))));
+      }
+      if (encoder.encodeQueueSize > 15) {
+        video.pause();
+        const wait = () => {
+          if (exportCancel) { resolve(); return; }
+          if (encoder.encodeQueueSize < 5) { video.requestVideoFrameCallback(onFrame); video.play().catch(() => {}); }
+          else setTimeout(wait, 50);
+        };
+        wait();
+        return;
+      }
+      rVFC();
+    };
+    const rVFC = () => { if (!video.paused && !video.ended) video.requestVideoFrameCallback(onFrame); };
+    video.onended = () => resolve();
+    video.onerror = () => reject(new Error("vidéo illisible"));
+    video.currentTime = start;
+    video.requestVideoFrameCallback(onFrame);
+    video.playbackRate = 4;
+    video.play().catch(reject);
+  });
+  if (at && box && !exportCancel) {
+    await new Promise(resolve => {
+      let aDone = false, aCount = 0;
+      const total = at.nb_samples || 1;
+      box.onSamples = (id, user, samps) => {
+        if (id !== at.id) return;
+        for (const smp of samps) {
+          const sec = smp.dts / at.timescale;
+          if (sec < start - 0.05) continue;
+          if (sec >= end) { aDone = true; break; }
+          try { muxer.addAudioChunkRaw(new Uint8Array(smp.data), "key", (sec - start) * 1e6, (smp.duration || 0) / at.timescale * 1e6); } catch (e) {}
+          aCount++;
+        }
+        if (aCount >= total) aDone = true;
+        if (aDone) resolve();
+      };
+      box.setExtractionOptions(at.id, null, { nbSamples: 500 });
+      box.start();
+      setTimeout(resolve, 60000);
+    });
+  }
+  await encoder.flush();
+  encoder.close();
+  done();
+  if (encoderError) throw new Error("Encodeur : " + encoderError.message);
+  if (exportCancel) return null;
+  if (chunks === 0) throw new Error("Aucune frame n'a pu être encodée.");
+  if (!at) status("Note : la piste audio n'a pas pu être incluse.");
+  muxer.finalize();
+  return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), ext: "mp4" };
+}
+
 async function exportFast(f, start, end, fi, fo) {
   if (typeof VideoEncoder === "undefined")
     throw new Error("L'encodeur WebCodecs (VideoEncoder) n'est pas disponible dans ce navigateur — choisissez « Avec son » (temps réel).");
@@ -1283,9 +1395,14 @@ async function exportEdited() {
     status("Export en cours…");
     let result;
     if (imageAdjusted()) {
-      status("Réglages d'image actifs — réencodage temps réel (avec son)…");
-      const blob = await exportRealTime(editFile, start, end, 0, 0);
-      result = blob ? { blob, ext: blob.type.includes("mp4") ? "mp4" : "webm" } : null;
+      status("Réglages d'image actifs — réencodage vidéo + audio copié…");
+      try {
+        result = await exportFilterMp4(editFile, start, end);
+      } catch (e) {
+        status("Repli temps réel : " + e.message);
+        const blob = await exportRealTime(editFile, start, end, 0, 0);
+        result = blob ? { blob, ext: blob.type.includes("mp4") ? "mp4" : "webm" } : null;
+      }
     } else if (typeof window.MP4Box !== "undefined" && typeof window.Mp4Muxer !== "undefined") {
       result = await exportRemux(editFile, start, end, 0, 0);
     } else {
@@ -2057,9 +2174,27 @@ for (let g = 0; g < NB_GROUPS; g++) {
 }
 $("editBright").addEventListener("input", () => { $("editBrightVal").textContent = Math.round(($("editBright").value) * 100) + " %"; });
 $("editContrast").addEventListener("input", () => { $("editContrastVal").textContent = Math.round(($("editContrast").value) * 100) + " %"; });
+function refreshImgPreview() {
+  const box = $("editPreviewBox");
+  if (box.style.display === "none") return;
+  const v = $("vVideo");
+  let cv = box.querySelector("canvas");
+  if (!cv) { cv = document.createElement("canvas"); cv.style.width = "100%"; box.appendChild(cv); }
+  const W = 320;
+  cv.width = W;
+  cv.height = Math.round(W * (v.videoHeight || 9) / (v.videoWidth || 16));
+  const ctx = cv.getContext("2d");
+  ctx.filter = `brightness(${$("editBright").value}) contrast(${$("editContrast").value})`;
+  try { ctx.drawImage(v, 0, 0, cv.width, cv.height); } catch (e) {}
+  ctx.filter = "none";
+}
+$("editImgPreview").onclick = () => { $("editPreviewBox").style.display = ""; refreshImgPreview(); };
+$("editBright").addEventListener("input", refreshImgPreview);
+$("editContrast").addEventListener("input", refreshImgPreview);
 $("editImgReset").onclick = () => {
   $("editBright").value = 1; $("editBrightVal").textContent = "100 %";
   $("editContrast").value = 1; $("editContrastVal").textContent = "100 %";
+  refreshImgPreview();
 };
 $("editExport").onclick = exportEdited;
 $("editCancel").onclick = () => { exportCancel = true; };

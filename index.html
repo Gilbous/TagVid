@@ -207,15 +207,59 @@
       <span style="font-weight:600;font-size:14px">✂️ Modifier</span>
       <button class="small" id="editDlgClose" style="margin-left:auto">✕ Fermer</button>
     </div>
-@@FRAME_Tags@@
 
-@@FRAME_Découpe@@
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">🏷 Tags</div>
+      <div class="grow"><label>Tags 1</label><input id="editTags0" placeholder="tags séparés par des virgules…"></div>
+      <div class="grow"><label>Tags 2</label><input id="editTags1" placeholder=""></div>
+      <div class="grow"><label>Tags 3</label><input id="editTags2" placeholder=""></div>
+      <div class="grow"><label>Tags 4</label><input id="editTags3" placeholder=""></div>
+      <p class="hint" style="margin:6px 0 0">Modifiés dès la sortie du champ.</p>
+    </div>
 
-@@FRAME_Image@@
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">📁 Fichier</div>
+      <div style="display:flex;gap:8px">
+        <button id="editRename">✏️ Renommer</button>
+        <button id="editMove">📂 Déplacer</button>
+      </div>
+    </div>
 
-@@FRAME_Export@@
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">✂️ Traitement</div>
+      <p class="hint" style="margin:0">Glissez les poignées de la bande de temps sous la vidéo pour régler début et fin (aperçu de l'image pendant le glissement). Clic sur la bande = déplacer le curseur de lecture.<br>
+      Clavier : ←/→ curseur ±1 s · Maj ±10 s · Ctrl ±0,1 s · S marquer début · E marquer fin · Espace lecture.</p>
+    </div>
 
-@@FRAME_Fichier@@
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">🎨 Image</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+        <span style="width:70px">Luminosité</span>
+        <input type="range" id="editBright" min="0.5" max="1.8" step="0.05" value="1" style="flex:1;padding:0">
+        <span id="editBrightVal" style="width:38px;text-align:right">100 %</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:6px">
+        <span style="width:70px">Contraste</span>
+        <input type="range" id="editContrast" min="0.5" max="1.8" step="0.05" value="1" style="flex:1;padding:0">
+        <span id="editContrastVal" style="width:38px;text-align:right">100 %</span>
+      </div>
+      <button class="small" id="editImgReset" style="margin-top:8px">⟲ Réinitialiser l'image</button>
+      <button class="small" id="editImgPreview" style="margin-top:8px">👁 Aperçu de l'effet</button>
+      <div id="editPreviewBox" style="display:none;margin-top:8px"></div>
+    </div>
+
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">💾 Export</div>
+      <button class="primary" id="editExport">Exporter la vidéo</button>
+      <p class="hint" style="margin:6px 0 0">Sans réglage d'image : export instantané sans réencodage (qualité identique, son conservé, coupe alignée à l'image-clé suivante). Avec des réglages d'image : vidéo réencodée en MP4 (audio copié), environ 4× plus rapide que le temps réel.</p>
+      <div id="editProg" style="display:none;margin-top:10px">
+        <div style="background:#2a303b;border-radius:6px;height:14px;overflow:hidden"><div id="editProgBar" style="background:var(--accent);height:100%;width:0%"></div></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+          <span class="hint" id="editProgTxt" style="margin:0"></span>
+          <button class="small" id="editCancel" style="margin-left:auto">Annuler l'export</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
