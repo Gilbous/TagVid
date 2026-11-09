@@ -871,6 +871,12 @@ function bitrateFor(w, h, factor) {
   const f = factor || parseFloat($("editQuality")?.value) || 0.5;
   return Math.min(24e6, Math.max(2e6, Math.round(w * h * f)));
 }
+function targetDims(w, h) {
+  const res = parseInt($("editRes")?.value || "0", 10);
+  if (!res || h <= res) return { w: w - (w % 2), h: h - (h % 2) };
+  const scale = res / h;
+  return { w: Math.max(2, Math.round(w * scale / 2) * 2), h: Math.max(2, Math.round(h * scale / 2) * 2) };
+}
 async function uniqueName(parent, origName, suffix) {
   const base = origName.replace(/\.[^.]+$/, "");
   let name = base + suffix;
@@ -897,7 +903,8 @@ async function loadExportVideo(f) {
 
 async function exportRealTime(f, start, end, fi, fo) {
   const [video, done] = await loadExportVideo(f);
-  const w = video.videoWidth, h = video.videoHeight;
+  const sw = video.videoWidth, sh = video.videoHeight;
+  const { w, h } = targetDims(sw, sh);
   const canvas = document.createElement("canvas");
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext("2d");
@@ -959,7 +966,8 @@ async function exportFast(f, start, end, fi, fo) {
     throw new Error("Ni mp4-muxer ni webm-mini.js ne sont chargés — choisissez « Avec son » (temps réel).");
   const [video, done] = await loadExportVideo(f);
   video.muted = true;
-  const w = video.videoWidth, h = video.videoHeight;
+  const { w, h } = targetDims(video.videoWidth, video.videoHeight);
+  const scaled = w !== video.videoWidth || h !== video.videoHeight;
   let config, ok;
   if (useMp4) {
     config = { codec: "avc1.640028", width: w, height: h, bitrate: bitrateFor(w, h), framerate: 25, avc: { format: "avc" } };
@@ -1006,6 +1014,7 @@ async function exportFast(f, start, end, fi, fo) {
   encoder.configure(config);
   const dur = end - start;
   const needFade = fi > 0 || fo > 0;
+  const needCanvas = needFade || scaled;
   const canvas = document.createElement("canvas");
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext("2d");
@@ -1018,9 +1027,9 @@ async function exportFast(f, start, end, fi, fo) {
       if (t >= end) { video.pause(); resolve(); return; }
       const rel = count === 0 ? 0 : t - start;
       let frame;
-      if (needFade) {
+      if (needCanvas) {
         ctx.globalAlpha = 1; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
-        ctx.globalAlpha = fadeAlpha(rel, dur, fi, fo);
+        ctx.globalAlpha = needFade ? fadeAlpha(rel, dur, fi, fo) : 1;
         ctx.drawImage(video, 0, 0, w, h);
         ctx.globalAlpha = 1;
         frame = new VideoFrame(canvas, { timestamp: Math.round(rel * 1e6) });

@@ -125,7 +125,7 @@
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.41</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.42</span>
 </header>
 
 <main>
@@ -213,6 +213,13 @@
     </div>
     <div style="margin-top:10px;font-weight:600">Export</div>
     <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+      <span>Définition :</span>
+      <select id="editRes" style="padding:4px;border-radius:8px;border:1px solid #3a4150;background:var(--bg);color:var(--text);font-size:13px">
+        <option value="0" selected>Originale</option>
+        <option value="1080">1080p</option>
+        <option value="720">720p</option>
+        <option value="480">480p</option>
+      </select>
       <span>Qualité :</span>
       <select id="editQuality" style="padding:4px;border-radius:8px;border:1px solid #3a4150;background:var(--bg);color:var(--text);font-size:13px">
         <option value="0.3">Standard</option>
@@ -333,7 +340,7 @@
 
 <script src="libs/mp4-muxer.js?v=1.41" onerror="var __m=document.createElement('script');__m.src='mp4-muxer.js?v=1.41';document.head.appendChild(__m);"></script>
 <script src="libs/webm-mini.js?v=1.41" onerror="var __s=document.createElement('script');__s.src='webm-mini.js?v=1.41';document.head.appendChild(__s);"></script>
-<script src="app-core.js?v=1.41"></script>
-<script src="app.js?v=1.41"></script>
+<script src="app-core.js?v=1.42"></script>
+<script src="app.js?v=1.42"></script>
 </body>
 </html>
