@@ -137,7 +137,7 @@
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.53</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.54</span>
 </header>
 
 <main>
@@ -225,14 +225,15 @@
       </div>
     </div>
 
-    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
-      <div style="font-weight:600;font-size:13px;margin-bottom:6px">✂️ Traitement</div>
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:8px">✂️ Retouche</div>
+
+      <div style="font-weight:600;font-size:12px;color:var(--accent);margin-bottom:4px">Découpe</div>
       <p class="hint" style="margin:0">Glissez les poignées de la bande de temps sous la vidéo pour régler début et fin (aperçu de l'image pendant le glissement). Clic sur la bande = déplacer le curseur de lecture.<br>
       Clavier : ←/→ curseur ±1 s · Maj ±10 s · Ctrl ±0,1 s · S marquer début · E marquer fin · Espace lecture.</p>
-    </div>
 
-    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
-      <div style="font-weight:600;font-size:13px;margin-bottom:6px">🎨 Image</div>
+      <hr style="border:none;border-top:1px solid #2a303b;margin:10px 0">
+      <div style="font-weight:600;font-size:12px;color:var(--accent);margin-bottom:4px">Image</div>
       <div style="display:flex;align-items:center;gap:8px;font-size:12px">
         <span style="width:70px">Luminosité</span>
         <input type="range" id="editBright" min="0.5" max="1.8" step="0.05" value="1" style="flex:1;padding:0">
@@ -246,10 +247,9 @@
       <button class="small" id="editImgReset" style="margin-top:8px">⟲ Réinitialiser l'image</button>
       <button class="small" id="editImgPreview" style="margin-top:8px">👁 Aperçu de l'effet</button>
       <div id="editPreviewBox" style="display:none;margin-top:8px"></div>
-    </div>
 
-    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px">
-      <div style="font-weight:600;font-size:13px;margin-bottom:6px">💾 Export</div>
+      <hr style="border:none;border-top:1px solid #2a303b;margin:10px 0">
+      <div style="font-weight:600;font-size:12px;color:var(--accent);margin-bottom:4px">Export</div>
       <button class="primary" id="editExport">Exporter la vidéo</button>
       <p class="hint" style="margin:6px 0 0">Sans réglage d'image : export instantané sans réencodage (qualité identique, son conservé, coupe alignée à l'image-clé suivante). Avec des réglages d'image : vidéo réencodée en MP4 (audio copié), environ 4× plus rapide que le temps réel.</p>
       <div id="editProg" style="display:none;margin-top:10px">
@@ -353,10 +353,10 @@
   </div>
 </dialog>
 
-<script src="libs/mp4box.all.js?v=1.53" onerror="var __b=document.createElement('script');__b.src='mp4box.all.js?v=1.53';document.head.appendChild(__b);"></script>
-<script src="libs/mp4-muxer.js?v=1.53" onerror="var __m=document.createElement('script');__m.src='mp4-muxer.js?v=1.53';document.head.appendChild(__m);"></script>
-<script src="libs/webm-mini.js?v=1.53" onerror="var __s=document.createElement('script');__s.src='webm-mini.js?v=1.53';document.head.appendChild(__s);"></script>
-<script src="app-core.js?v=1.53"></script>
-<script src="app.js?v=1.53"></script>
+<script src="libs/mp4box.all.js?v=1.54" onerror="var __b=document.createElement('script');__b.src='mp4box.all.js?v=1.54';document.head.appendChild(__b);"></script>
+<script src="libs/mp4-muxer.js?v=1.54" onerror="var __m=document.createElement('script');__m.src='mp4-muxer.js?v=1.54';document.head.appendChild(__m);"></script>
+<script src="libs/webm-mini.js?v=1.54" onerror="var __s=document.createElement('script');__s.src='webm-mini.js?v=1.54';document.head.appendChild(__s);"></script>
+<script src="app-core.js?v=1.54"></script>
+<script src="app.js?v=1.54"></script>
 </body>
 </html>

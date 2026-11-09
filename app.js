@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.53";
+const APP_JS_VERSION = "1.54";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
