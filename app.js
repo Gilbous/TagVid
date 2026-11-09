@@ -1,4 +1,5 @@
 "use strict";
+const APP_JS_VERSION = "1.44";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -1926,4 +1927,8 @@ toggle.onclick = () => {
   state.collapsed = new Set((await dbGet("meta", "collapsed")) || []);
   const ok = await restoreRoot().catch(() => false);
   if (!ok) status("");
+  const badge = document.querySelector('header .hintline[title*="version"]');
+  if (badge && !badge.textContent.includes("v" + APP_JS_VERSION)) {
+    alert(`Version incohérente : index.html est en ${badge.textContent.trim()} mais app.js est en v${APP_JS_VERSION}.\nRe-téléchargez TOUS les fichiers (index.html, app.js, app-core.js) depuis le dépôt GitHub.`);
+  }
 })();
