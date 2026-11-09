@@ -1058,7 +1058,7 @@ async function exportFast(f, start, end, fi, fo) {
     video.onerror = () => reject(new Error("vidéo illisible"));
     video.currentTime = start;
     video.requestVideoFrameCallback(onFrame);
-    video.playbackRate = 16;
+    video.playbackRate = 4;
     video.play().catch(reject);
   });
   await encoder.flush();
