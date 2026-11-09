@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.49";
+const APP_JS_VERSION = "1.50";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -836,7 +836,8 @@ let editFile = null;
 let exportCancel = false;
 let previewTimer = null;
 
-function openEditDlg() {
+let editActive = false;
+function openEditPanel() {
   const f = currentVideoFile();
   if (!f) return;
   editFile = f;
@@ -844,10 +845,68 @@ function openEditDlg() {
   $("editDlgName").textContent = f.path;
   $("editStart").value = 0;
   $("editEnd").value = (v.duration || 0).toFixed(1);
-  $("editInfo").textContent = `Durée totale : ${fmtDuration(v.duration || 0)} — position actuelle : ${fmtDuration(v.currentTime)}`;
   $("editProg").style.display = "none";
-  $("editDlg").showModal();
+  $("viewer").classList.add("editing");
+  $("editPanel").classList.remove("hidden");
+  $("cutBar").classList.remove("hidden");
+  editActive = true;
+  updateCutUI();
 }
+function closeEditPanel() {
+  editActive = false;
+  clearInterval(previewTimer);
+  $("viewer").classList.remove("editing");
+  $("editPanel").classList.add("hidden");
+  $("cutBar").classList.add("hidden");
+}
+function updateCutUI() {
+  const v = $("vVideo");
+  const dur = v.duration || 1;
+  const { start, end } = editBounds();
+  const L = Math.max(0, Math.min(100, start / dur * 100));
+  const R = Math.max(0, Math.min(100, end / dur * 100));
+  $("cutSel").style.left = L + "%";
+  $("cutSel").style.width = Math.max(0, R - L) + "%";
+  $("cutHandleL").style.left = "calc(" + L + "% - 5px)";
+  $("cutHandleR").style.left = "calc(" + R + "% - 5px)";
+  $("cutPlay").style.left = Math.max(0, Math.min(100, v.currentTime / dur * 100)) + "%";
+  $("cutSelInfo").textContent = `Sélection : ${fmtDuration(start)} → ${fmtDuration(end)} (${fmtDuration(end - start)}) — curseur : ${fmtDuration(v.currentTime)} / ${fmtDuration(dur)}`;
+}
+(function setupCutBar() {
+  const track = $("cutTrack");
+  let drag = null;
+  const timeAt = e => {
+    const r = track.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    return ratio * ($("vVideo").duration || 0);
+  };
+  track.addEventListener("pointerdown", e => {
+    if (!editActive) return;
+    const v = $("vVideo");
+    const t = timeAt(e);
+    const { start, end } = editBounds();
+    const r = track.getBoundingClientRect();
+    const pxL = (t - start) / (v.duration || 1) * r.width;
+    const pxR = (t - end) / (v.duration || 1) * r.width;
+    if (Math.abs(pxL) < 10) drag = { type: "start" };
+    else if (Math.abs(pxR) < 10) drag = { type: "end" };
+    else { drag = { type: "play" }; v.currentTime = t; }
+    try { track.setPointerCapture(e.pointerId); } catch (err) {}
+    updateCutUI();
+  });
+  track.addEventListener("pointermove", e => {
+    if (!drag || !editActive) return;
+    const v = $("vVideo");
+    const t = timeAt(e);
+    v.pause();
+    if (drag.type === "start") { $("editStart").value = t.toFixed(1); v.currentTime = t; }
+    else if (drag.type === "end") { $("editEnd").value = t.toFixed(1); v.currentTime = t; }
+    else v.currentTime = t;
+    updateCutUI();
+  });
+  track.addEventListener("pointerup", () => { drag = null; });
+})();
+$("vVideo").addEventListener("timeupdate", () => { if (editActive) updateCutUI(); });
 function editBounds() {
   const v = $("vVideo");
   const dur = v.duration || 0;
@@ -1023,7 +1082,10 @@ async function exportRemux(f, start, end, fi, fo) {
             muxer.addVideoChunkRaw(new Uint8Array(s.data), (s.is_sync || s.is_rap) ? "key" : "delta", ts, dur, { decoderConfig }, cto);
             vCount++;
           }
-          setEditProgress(Math.min(0.99, vCount / vTotal));
+          if (vCount > 0) {
+            const lastSec = s.dts / vt.timescale;
+            setEditProgress(Math.min(0.99, Math.max(0, (lastSec - start) / Math.max(0.1, end - start))));
+          }
           if (vCount >= vTotal) vDone = true;
         } else if (at && id === at.id) {
           for (const s of samps) {
@@ -1188,9 +1250,6 @@ async function exportEdited() {
   const v = $("vVideo");
   const { start, end } = editBounds();
   if (end - start < 1) { alert("Sélection trop courte (1 seconde minimum)."); return; }
-  const fi = $("editFadeIn").checked ? Math.max(0.5, parseFloat($("editFadeInS").value) || 1) : 0;
-  const fo = $("editFadeOut").checked ? Math.max(0.5, parseFloat($("editFadeOutS").value) || 1) : 0;
-  const withAudio = (document.querySelector('input[name="editMode"]:checked') || {}).value !== "fast";
   if (!(await ensureWrite())) return;
   exportCancel = false;
   $("editProg").style.display = "";
@@ -1198,17 +1257,12 @@ async function exportEdited() {
   try {
     status("Export en cours…");
     let result;
-    if (withAudio) {
-      const blob = await exportRealTime(editFile, start, end, fi, fo);
-      result = blob ? { blob, ext: blob.type.includes("mp4") ? "mp4" : "webm" } : null;
-    } else if (typeof window.MP4Box !== "undefined" && typeof window.Mp4Muxer !== "undefined") {
-      if (fi > 0 || fo > 0) {
-        const ok = await askConfirm("Les fondus ne sont pas applicables au mode instantané (sans réencodage).\\nContinuer sans fondus ?");
-        if (!ok) { $("editProg").style.display = "none"; return; }
-      }
-      result = await exportRemux(editFile, start, end, fi, fo);
+    if (typeof window.MP4Box !== "undefined" && typeof window.Mp4Muxer !== "undefined") {
+      result = await exportRemux(editFile, start, end, 0, 0);
     } else {
-      result = await exportFast(editFile, start, end, fi, fo);
+      status("Librairies mp4box/mp4-muxer absentes — export temps réel (avec son).");
+      const blob = await exportRealTime(editFile, start, end, 0, 0);
+      result = blob ? { blob, ext: blob.type.includes("mp4") ? "mp4" : "webm" } : null;
     }
     status("");
     if (!result || !result.blob) { $("editProg").style.display = "none"; status("Export annulé."); return; }
@@ -1521,6 +1575,7 @@ function flashSeek(sec) {
   f._t = setTimeout(() => { f.style.opacity = "0"; }, 600);
 }
 function closeViewer() {
+  if (typeof closeEditPanel === "function" && editActive) closeEditPanel();
   $("vVideo").pause();
   $("vVideo").src = "";
   if (currentUrl) { URL.revokeObjectURL(currentUrl); currentUrl = null; }
@@ -1962,10 +2017,13 @@ for (let g = 0; g < NB_GROUPS; g++) {
 }
 $("vClose").onclick = closeViewer;
 $("vTags").onclick = () => { const f = currentVideoFile(); if (f) openTagDialog(f); };
-$("vEdit").onclick = openEditDlg;
+$("vEdit").onclick = () => {
+  if (editActive) { $("editPanel").classList.remove("hidden"); updateCutUI(); return; }
+  openEditPanel();
+};
 $("vDelete").onclick = deleteCurrentFile;
-$("editDlgClose").onclick = () => $("editDlg").close();
-$("editDlgCancel").onclick = () => $("editDlg").close();
+$("editDlgClose").onclick = closeEditPanel;
+$("editReduce").onclick = () => { $("editPanel").classList.add("hidden"); };
 $("editMarkStart").onclick = () => {
   const t = $("vVideo").currentTime;
   $("editStart").value = t.toFixed(1);
@@ -1978,6 +2036,8 @@ $("editMarkEnd").onclick = () => {
   const { start } = editBounds();
   if (start >= t) $("editStart").value = Math.max(0, t - 1).toFixed(1);
 };
+$("editStart").addEventListener("input", () => { if (editActive) updateCutUI(); });
+$("editEnd").addEventListener("input", () => { if (editActive) updateCutUI(); });
 $("editReset").onclick = () => {
   $("editStart").value = 0;
   $("editEnd").value = ($("vVideo").duration || 0).toFixed(1);
@@ -2004,7 +2064,22 @@ $("vFwd15").onclick = () => seekVideo(10);
 $("vFwd30").onclick = () => seekVideo(30);
 document.addEventListener("keydown", e => {
   if (!$("viewer").classList.contains("open")) return;
-  if (e.key === "Escape") closeViewer();
+  if (e.key === "Escape") { if (editActive) closeEditPanel(); else closeViewer(); return; }
+  if (editActive && document.activeElement && document.activeElement.tagName === "INPUT") return;
+  if (editActive) {
+    const v = $("vVideo");
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      e.preventDefault();
+      const step = (e.ctrlKey ? 0.1 : e.shiftKey ? 10 : 1) * (e.key === "ArrowLeft" ? -1 : 1);
+      v.pause();
+      v.currentTime = Math.max(0, Math.min(v.duration || 0, v.currentTime + step));
+      updateCutUI();
+      return;
+    }
+    if (e.key === "s" || e.key === "S") { $("editStart").value = v.currentTime.toFixed(1); updateCutUI(); return; }
+    if (e.key === "e" || e.key === "E") { $("editEnd").value = v.currentTime.toFixed(1); updateCutUI(); return; }
+    if (e.key === " ") { e.preventDefault(); if (v.paused) v.play().catch(() => {}); else v.pause(); return; }
+  }
   if (e.key === "ArrowLeft") seekVideo(-10);
   if (e.key === "ArrowRight") seekVideo(30);
   if (e.key === "ArrowUp") { e.preventDefault(); viewerStep(-1); }
