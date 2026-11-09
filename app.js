@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.48";
+const APP_JS_VERSION = "1.49";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -985,8 +985,14 @@ async function exportRemux(f, start, end, fi, fo) {
   const trak = box.getTrackById(vt.id);
   const entry = trak.mdia.minf.stbl.stsd.entries[0];
   if (!entry.avcC) throw new Error("La vidéo n'est pas en H.264 — utilisez le mode temps réel.");
-  const desc = new Uint8Array(entry.avcC.data);
-  const codec = "avc1." + [1, 2, 3].map(i => desc[i].toString(16).padStart(2, "0")).join("");
+  let desc = null;
+  if (entry.avcC.start !== undefined && entry.avcC.size && entry.avcC.hdr_size) {
+    desc = new Uint8Array(buf.slice(entry.avcC.start + entry.avcC.hdr_size, entry.avcC.start + entry.avcC.size));
+  } else if (entry.avcC.data) {
+    desc = new Uint8Array(entry.avcC.data);
+  }
+  if (!desc || desc.length < 4) throw new Error("Configuration H.264 illisible (avcC introuvable).");
+  const codec = "avc1." + [1, 2, 3].map(i => (desc[i] || 0).toString(16).padStart(2, "0")).join("");
   const decoderConfig = { codec, description: desc };
   const audioOk = !!(at && at.codec && at.codec.startsWith("mp4a") && at.audio && at.audio.sample_rate);
   const muxer = new Mp4Muxer.Muxer({
