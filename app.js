@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.45";
+const APP_JS_VERSION = "1.46";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -917,7 +917,12 @@ async function exportRealTime(f, start, end, fi, fo) {
   src.connect(gain); gain.connect(dest);
   stream.addTrack(dest.stream.getAudioTracks()[0]);
   let mime = "";
-  for (const m of ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]) {
+  for (const m of [
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+    "video/webm;codecs=vp9,opus",
+    "video/webm;codecs=vp8,opus",
+    "video/webm",
+  ]) {
     if (MediaRecorder.isTypeSupported(m)) { mime = m; break; }
   }
   if (!mime) throw new Error("MediaRecorder non disponible");
@@ -1036,9 +1041,9 @@ async function exportFast(f, start, end, fi, fo) {
         ctx.globalAlpha = needFade ? fadeAlpha(rel, dur, fi, fo) : 1;
         ctx.drawImage(video, 0, 0, w, h);
         ctx.globalAlpha = 1;
-        frame = new VideoFrame(canvas, { timestamp: Math.round(rel * 1e6) });
+        frame = new VideoFrame(canvas, { timestamp: Math.round(rel * 1e6), duration: 40000 });
       } else {
-        try { frame = new VideoFrame(video, { timestamp: Math.round(rel * 1e6) }); } catch (e) { rVFC(); return; }
+        try { frame = new VideoFrame(video, { timestamp: Math.round(rel * 1e6), duration: 40000 }); } catch (e) { rVFC(); return; }
       }
       try {
         encoder.encode(frame, { keyFrame: count % KEY_EVERY === 0 });
@@ -1103,7 +1108,7 @@ async function exportEdited() {
     let result;
     if (withAudio) {
       const blob = await exportRealTime(editFile, start, end, fi, fo);
-      result = blob ? { blob, ext: "webm" } : null;
+      result = blob ? { blob, ext: blob.type.includes("mp4") ? "mp4" : "webm" } : null;
     } else {
       result = await exportFast(editFile, start, end, fi, fo);
     }
