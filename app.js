@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.54";
+const APP_JS_VERSION = "1.55";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -1103,10 +1103,10 @@ async function exportRemux(f, start, end, fi, fo) {
               else continue;
             }
             if (sec >= end) { vDone = true; break; }
-            const ts = s.dts / vt.timescale * 1e6;
+            const pts = ((s.cts !== undefined) ? s.cts : s.dts) / vt.timescale * 1e6;
+            const dtsUs = s.dts / vt.timescale * 1e6;
             const dur = (s.duration || 0) / vt.timescale * 1e6;
-            const cto = ((s.cts || s.dts) - s.dts) / vt.timescale * 1e6;
-            muxer.addVideoChunkRaw(new Uint8Array(s.data), (s.is_sync || s.is_rap) ? "key" : "delta", ts, dur, { decoderConfig }, cto);
+            muxer.addVideoChunkRaw(new Uint8Array(s.data), (s.is_sync || s.is_rap) ? "key" : "delta", pts, dur, { decoderConfig }, pts - dtsUs);
             vCount++;
           }
           if (vCount > 0 && lastSec !== null) {
