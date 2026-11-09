@@ -106,6 +106,9 @@
   .cuthandle { position: absolute; top: -4px; width: 10px; height: 34px; background: var(--accent); border-radius: 4px; cursor: ew-resize; }
   #cutPlay { position: absolute; top: -4px; width: 2px; height: 34px; background: #ffd24a; pointer-events: none; }
   #cutTimes { font-size: 11px; color: var(--muted); margin-top: 5px; }
+  #editPanel .grow { margin-top: 9px; }
+  #editPanel .grow label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; font-weight: 600; }
+  #editPanel .grow input { width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid #3a4150; background: var(--bg); color: var(--text); font-size: 13px; box-sizing: border-box; }
 
   .hidden { display: none !important; }
   #empty { color: var(--muted); padding: 40px; text-align: center; }
@@ -134,7 +137,7 @@
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.51</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.52</span>
 </header>
 
 <main>
@@ -204,8 +207,6 @@
       <span style="font-weight:600;font-size:14px">✂️ Modifier</span>
       <button class="small" id="editDlgClose" style="margin-left:auto">✕ Fermer</button>
     </div>
-    <p id="editDlgName" style="font-size:11px;color:var(--muted);word-break:break-all;margin:8px 0 10px"></p>
-
     <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
       <div style="font-weight:600;font-size:13px;margin-bottom:6px">🏷 Tags</div>
       <div class="grow"><label>Tags 1</label><input id="editTags0" placeholder="tags séparés par des virgules…"></div>
@@ -219,15 +220,6 @@
       <div style="font-weight:600;font-size:13px;margin-bottom:6px">✂️ Découpe</div>
       <p class="hint" style="margin:0">Glissez les poignées de la bande de temps sous la vidéo pour régler début et fin (aperçu de l'image pendant le glissement). Clic sur la bande = déplacer le curseur de lecture.<br>
       Clavier : ←/→ curseur ±1 s · Maj ±10 s · Ctrl ±0,1 s · S marquer début · E marquer fin · Espace lecture.</p>
-      <button class="primary" id="editExport" style="margin-top:10px">💾 Exporter la vidéo</button>
-      <p class="hint" style="margin:6px 0 0">Sans réglage d'image : export instantané sans réencodage (qualité identique, son conservé, coupe alignée à l'image-clé suivante). Avec des réglages d'image : réencodage temps réel (avec son).</p>
-      <div id="editProg" style="display:none;margin-top:10px">
-        <div style="background:#2a303b;border-radius:6px;height:14px;overflow:hidden"><div id="editProgBar" style="background:var(--accent);height:100%;width:0%"></div></div>
-        <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
-          <span class="hint" id="editProgTxt" style="margin:0"></span>
-          <button class="small" id="editCancel" style="margin-left:auto">Annuler l'export</button>
-        </div>
-      </div>
     </div>
 
     <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
@@ -243,7 +235,19 @@
         <span id="editContrastVal" style="width:38px;text-align:right">100 %</span>
       </div>
       <button class="small" id="editImgReset" style="margin-top:8px">⟲ Réinitialiser l'image</button>
-      <p class="hint" style="margin:6px 0 0">Tout réglage d'image force un réencodage (export temps réel).</p>
+    </div>
+
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">💾 Export</div>
+      <button class="primary" id="editExport">Exporter la vidéo</button>
+      <p class="hint" style="margin:6px 0 0">Sans réglage d'image : export instantané sans réencodage (qualité identique, son conservé, coupe alignée à l'image-clé suivante). Avec des réglages d'image : réencodage temps réel (avec son).</p>
+      <div id="editProg" style="display:none;margin-top:10px">
+        <div style="background:#2a303b;border-radius:6px;height:14px;overflow:hidden"><div id="editProgBar" style="background:var(--accent);height:100%;width:0%"></div></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+          <span class="hint" id="editProgTxt" style="margin:0"></span>
+          <button class="small" id="editCancel" style="margin-left:auto">Annuler l'export</button>
+        </div>
+      </div>
     </div>
 
     <div style="border:1px solid #2a303b;border-radius:10px;padding:10px">
@@ -346,10 +350,10 @@
   </div>
 </dialog>
 
-<script src="libs/mp4box.all.js?v=1.51" onerror="var __b=document.createElement('script');__b.src='mp4box.all.js?v=1.51';document.head.appendChild(__b);"></script>
-<script src="libs/mp4-muxer.js?v=1.51" onerror="var __m=document.createElement('script');__m.src='mp4-muxer.js?v=1.51';document.head.appendChild(__m);"></script>
-<script src="libs/webm-mini.js?v=1.51" onerror="var __s=document.createElement('script');__s.src='webm-mini.js?v=1.51';document.head.appendChild(__s);"></script>
-<script src="app-core.js?v=1.51"></script>
-<script src="app.js?v=1.51"></script>
+<script src="libs/mp4box.all.js?v=1.52" onerror="var __b=document.createElement('script');__b.src='mp4box.all.js?v=1.52';document.head.appendChild(__b);"></script>
+<script src="libs/mp4-muxer.js?v=1.52" onerror="var __m=document.createElement('script');__m.src='mp4-muxer.js?v=1.52';document.head.appendChild(__m);"></script>
+<script src="libs/webm-mini.js?v=1.52" onerror="var __s=document.createElement('script');__s.src='webm-mini.js?v=1.52';document.head.appendChild(__s);"></script>
+<script src="app-core.js?v=1.52"></script>
+<script src="app.js?v=1.52"></script>
 </body>
 </html>

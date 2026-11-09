@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.51";
+const APP_JS_VERSION = "1.52";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -871,7 +871,6 @@ function openEditPanel() {
   if (!f) return;
   editFile = f;
   const v = $("vVideo");
-  $("editDlgName").textContent = f.path;
   cutStart = 0;
   cutEnd = v.duration || 0;
   loadEditTags(f);
@@ -1087,7 +1086,7 @@ async function exportRemux(f, start, end, fi, fo) {
     fastStart: "in-memory",
     firstTimestampBehavior: "cross-track-offset",
   });
-  let vStarted = false, vStartSec = null, vDone = false, aDone = !audioOk;
+  let vStarted = false, vStartSec = null, vDone = false, aDone = !audioOk, lastSec = null;
   let vCount = 0, aCount = 0, muxError = null;
   const vTotal = vt.nb_samples || 1, aTotal = at ? (at.nb_samples || 1) : 0;
   await new Promise((resolve, reject) => {
@@ -1096,6 +1095,7 @@ async function exportRemux(f, start, end, fi, fo) {
         if (id === vt.id) {
           for (const s of samps) {
             if (vDone || exportCancel) break;
+            lastSec = s.dts / vt.timescale;
             const sec = s.dts / vt.timescale;
             if (!vStarted) {
               if ((s.is_sync || s.is_rap) && sec >= start) { vStarted = true; vStartSec = sec; }
@@ -1108,8 +1108,7 @@ async function exportRemux(f, start, end, fi, fo) {
             muxer.addVideoChunkRaw(new Uint8Array(s.data), (s.is_sync || s.is_rap) ? "key" : "delta", ts, dur, { decoderConfig }, cto);
             vCount++;
           }
-          if (vCount > 0) {
-            const lastSec = s.dts / vt.timescale;
+          if (vCount > 0 && lastSec !== null) {
             setEditProgress(Math.min(0.99, Math.max(0, (lastSec - start) / Math.max(0.1, end - start))));
           }
           if (vCount >= vTotal) vDone = true;
@@ -1308,7 +1307,7 @@ async function exportEdited() {
       await editFile.parent.removeEntry(editFile.name);
       await purgePath(editFile.path);
     }
-    $("editDlg").close();
+    closeEditPanel();
     closeViewer();
     await scanRoot();
     status("Export terminé.");
