@@ -98,6 +98,7 @@
   .stars-inline { letter-spacing: 1px; color: #4a5160; font-size: 14px; white-space: nowrap; }
   .stars-inline .on { color: #ffd24a; }
   #viewer.editing .vwrap { padding-right: 390px; }
+  #viewer.editing #cutBar { margin-right: 380px; }
   #editPanel { position: absolute; top: 56px; right: 0; bottom: 0; width: 380px; background: var(--panel); border-left: 1px solid #343b47; overflow-y: auto; padding: 14px; z-index: 40; }
   #cutBar { padding: 8px 14px 10px; background: var(--panel); border-top: 1px solid #2a303b; }
   #cutTrack { position: relative; height: 26px; background: #2a303b; border-radius: 8px; cursor: pointer; }
@@ -133,7 +134,7 @@
   <button id="btnThumbs" class="hidden">Régénérer les vignettes</button>
   <input type="file" id="importFile" accept=".json" class="hidden">
   <span id="status"></span>
-  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.50</span>
+  <span class="hintline" style="margin-left:auto" title="Numéro de version — vérifiez qu'il correspond à la dernière version publiée">v1.51</span>
 </header>
 
 <main>
@@ -177,7 +178,6 @@
     <span class="vtitle" id="vTitle"></span>
     <div class="vnav">
       <span class="stars" id="vStars" title="Voter : cliquez sur une étoile (recliquez pour retirer)"></span>
-      <button id="vTags">🏷 Tags</button>
       <button id="vEdit" title="Découper, renommer ou déplacer ce fichier">✂️ Modifier</button>
       <button id="vDelete" title="Supprimer définitivement le fichier du disque" style="border-color:var(--danger);color:var(--danger)">🗑 Supprimer</button>
       <button id="vPrev">⏮ Précédent</button>
@@ -202,45 +202,56 @@
   <div id="editPanel" class="hidden">
     <div style="display:flex;align-items:center;gap:8px">
       <span style="font-weight:600;font-size:14px">✂️ Modifier</span>
-      <button class="small" id="editReduce" style="margin-left:auto">▸ Réduire</button>
-      <button class="small" id="editDlgClose">✕ Fermer</button>
+      <button class="small" id="editDlgClose" style="margin-left:auto">✕ Fermer</button>
     </div>
-    <p id="editDlgName" style="font-size:11px;color:var(--muted);word-break:break-all;margin:8px 0"></p>
-    <div style="display:flex;gap:6px;border-bottom:1px solid #2a303b;margin-bottom:10px">
-      <span style="padding:6px 12px;font-weight:600;font-size:13px;border-bottom:2px solid var(--accent)">Découpe</span>
-      <span style="padding:6px 12px;font-size:13px;color:var(--muted);cursor:not-allowed" title="Disponible en phase 2">Image</span>
+    <p id="editDlgName" style="font-size:11px;color:var(--muted);word-break:break-all;margin:8px 0 10px"></p>
+
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">🏷 Tags</div>
+      <div class="grow"><label>Tags 1</label><input id="editTags0" placeholder="tags séparés par des virgules…"></div>
+      <div class="grow"><label>Tags 2</label><input id="editTags1" placeholder=""></div>
+      <div class="grow"><label>Tags 3</label><input id="editTags2" placeholder=""></div>
+      <div class="grow"><label>Tags 4</label><input id="editTags3" placeholder=""></div>
+      <p class="hint" style="margin:6px 0 0">Modifiés dès la sortie du champ.</p>
     </div>
-    <div style="font-size:13px">
-      <div style="font-weight:600;margin-top:6px">Découpe</div>
-      <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
-        <span>Début</span><input type="number" id="editStart" min="0" step="0.1" style="width:80px;padding:4px"> s
-        <button class="small" id="editMarkStart">⏱ Ici</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
-        <span>Fin</span><input type="number" id="editEnd" min="0" step="0.1" style="width:80px;padding:4px"> s
-        <button class="small" id="editMarkEnd">⏹ Ici</button>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="small" id="editPreview">▶ Lire la sélection</button>
-        <button class="small" id="editReset">⟲ Réinitialiser</button>
-      </div>
-      <p class="hint" style="margin:8px 0 0">Clavier : ←/→ curseur ±1 s · Maj ±10 s · Ctrl ±0,1 s · S marquer début · E marquer fin · Espace lecture</p>
-    </div>
-    <div style="font-size:13px;margin-top:12px">
-      <div style="font-weight:600">Export</div>
-      <button class="primary" id="editExport" style="margin-top:6px">💾 Exporter la vidéo</button>
-      <p class="hint" style="margin:6px 0 0">Mode instantané sans réencodage : qualité identique, son conservé, coupe alignée à l'image-clé suivante. Repli temps réel si les librairies mp4box/mp4-muxer sont absentes.</p>
-    </div>
-    <div id="editProg" style="display:none;margin-top:12px">
-      <div style="background:#2a303b;border-radius:6px;height:14px;overflow:hidden"><div id="editProgBar" style="background:var(--accent);height:100%;width:0%"></div></div>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
-        <span class="hint" id="editProgTxt" style="margin:0"></span>
-        <button class="small" id="editCancel" style="margin-left:auto">Annuler l'export</button>
+
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">✂️ Découpe</div>
+      <p class="hint" style="margin:0">Glissez les poignées de la bande de temps sous la vidéo pour régler début et fin (aperçu de l'image pendant le glissement). Clic sur la bande = déplacer le curseur de lecture.<br>
+      Clavier : ←/→ curseur ±1 s · Maj ±10 s · Ctrl ±0,1 s · S marquer début · E marquer fin · Espace lecture.</p>
+      <button class="primary" id="editExport" style="margin-top:10px">💾 Exporter la vidéo</button>
+      <p class="hint" style="margin:6px 0 0">Sans réglage d'image : export instantané sans réencodage (qualité identique, son conservé, coupe alignée à l'image-clé suivante). Avec des réglages d'image : réencodage temps réel (avec son).</p>
+      <div id="editProg" style="display:none;margin-top:10px">
+        <div style="background:#2a303b;border-radius:6px;height:14px;overflow:hidden"><div id="editProgBar" style="background:var(--accent);height:100%;width:0%"></div></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+          <span class="hint" id="editProgTxt" style="margin:0"></span>
+          <button class="small" id="editCancel" style="margin-left:auto">Annuler l'export</button>
+        </div>
       </div>
     </div>
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button id="editRename">✏️ Renommer</button>
-      <button id="editMove">📂 Déplacer</button>
+
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px;margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">🎨 Image</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+        <span style="width:70px">Luminosité</span>
+        <input type="range" id="editBright" min="0.5" max="1.8" step="0.05" value="1" style="flex:1;padding:0">
+        <span id="editBrightVal" style="width:38px;text-align:right">100 %</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;margin-top:6px">
+        <span style="width:70px">Contraste</span>
+        <input type="range" id="editContrast" min="0.5" max="1.8" step="0.05" value="1" style="flex:1;padding:0">
+        <span id="editContrastVal" style="width:38px;text-align:right">100 %</span>
+      </div>
+      <button class="small" id="editImgReset" style="margin-top:8px">⟲ Réinitialiser l'image</button>
+      <p class="hint" style="margin:6px 0 0">Tout réglage d'image force un réencodage (export temps réel).</p>
+    </div>
+
+    <div style="border:1px solid #2a303b;border-radius:10px;padding:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">📁 Fichier</div>
+      <div style="display:flex;gap:8px">
+        <button id="editRename">✏️ Renommer</button>
+        <button id="editMove">📂 Déplacer</button>
+      </div>
     </div>
   </div>
 </div>
@@ -335,10 +346,10 @@
   </div>
 </dialog>
 
-<script src="libs/mp4box.all.js?v=1.50" onerror="var __b=document.createElement('script');__b.src='mp4box.all.js?v=1.50';document.head.appendChild(__b);"></script>
-<script src="libs/mp4-muxer.js?v=1.50" onerror="var __m=document.createElement('script');__m.src='mp4-muxer.js?v=1.50';document.head.appendChild(__m);"></script>
-<script src="libs/webm-mini.js?v=1.50" onerror="var __s=document.createElement('script');__s.src='webm-mini.js?v=1.50';document.head.appendChild(__s);"></script>
-<script src="app-core.js?v=1.50"></script>
-<script src="app.js?v=1.50"></script>
+<script src="libs/mp4box.all.js?v=1.51" onerror="var __b=document.createElement('script');__b.src='mp4box.all.js?v=1.51';document.head.appendChild(__b);"></script>
+<script src="libs/mp4-muxer.js?v=1.51" onerror="var __m=document.createElement('script');__m.src='mp4-muxer.js?v=1.51';document.head.appendChild(__m);"></script>
+<script src="libs/webm-mini.js?v=1.51" onerror="var __s=document.createElement('script');__s.src='webm-mini.js?v=1.51';document.head.appendChild(__s);"></script>
+<script src="app-core.js?v=1.51"></script>
+<script src="app.js?v=1.51"></script>
 </body>
 </html>

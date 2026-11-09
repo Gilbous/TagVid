@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.50";
+const APP_JS_VERSION = "1.51";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -837,14 +837,46 @@ let exportCancel = false;
 let previewTimer = null;
 
 let editActive = false;
+let cutStart = 0, cutEnd = 0;
+function editBounds() {
+  const v = $("vVideo");
+  const dur = v.duration || 0;
+  let start = isFinite(cutStart) ? cutStart : 0;
+  let end = isFinite(cutEnd) ? cutEnd : dur;
+  if (start < 0) start = 0;
+  if (end > dur) end = dur;
+  if (end - start < 0.5) end = Math.min(dur, start + 0.5);
+  return { start, end, dur };
+}
+function loadEditTags(f) {
+  const groups = tagsOf(f.path);
+  for (let g = 0; g < NB_GROUPS; g++) $("editTags" + g).value = [...groups[g]].join(", ");
+}
+async function saveEditTags() {
+  if (!editFile) return;
+  const groups = emptyGroups();
+  for (let g = 0; g < NB_GROUPS; g++) {
+    for (const t of $("editTags" + g).value.split(",").map(x => x.trim()).filter(Boolean)) groups[g].add(t);
+  }
+  state.tags.set(editFile.path, groups);
+  await saveTags(editFile.path);
+  render();
+  scheduleAutoBackup();
+}
+function imageAdjusted() {
+  return (parseFloat($("editBright").value) || 1) !== 1 || (parseFloat($("editContrast").value) || 1) !== 1;
+}
 function openEditPanel() {
   const f = currentVideoFile();
   if (!f) return;
   editFile = f;
   const v = $("vVideo");
   $("editDlgName").textContent = f.path;
-  $("editStart").value = 0;
-  $("editEnd").value = (v.duration || 0).toFixed(1);
+  cutStart = 0;
+  cutEnd = v.duration || 0;
+  loadEditTags(f);
+  $("editBright").value = 1; $("editBrightVal").textContent = "100 %";
+  $("editContrast").value = 1; $("editContrastVal").textContent = "100 %";
   $("editProg").style.display = "none";
   $("viewer").classList.add("editing");
   $("editPanel").classList.remove("hidden");
@@ -899,24 +931,15 @@ function updateCutUI() {
     const v = $("vVideo");
     const t = timeAt(e);
     v.pause();
-    if (drag.type === "start") { $("editStart").value = t.toFixed(1); v.currentTime = t; }
-    else if (drag.type === "end") { $("editEnd").value = t.toFixed(1); v.currentTime = t; }
+    if (drag.type === "start") { cutStart = t; v.currentTime = t; }
+    else if (drag.type === "end") { cutEnd = t; v.currentTime = t; }
     else v.currentTime = t;
     updateCutUI();
   });
   track.addEventListener("pointerup", () => { drag = null; });
 })();
 $("vVideo").addEventListener("timeupdate", () => { if (editActive) updateCutUI(); });
-function editBounds() {
-  const v = $("vVideo");
-  const dur = v.duration || 0;
-  let start = parseFloat($("editStart").value);
-  let end = parseFloat($("editEnd").value);
-  if (!isFinite(start) || start < 0) start = 0;
-  if (!isFinite(end) || end > dur) end = dur;
-  if (end - start < 0.5) end = Math.min(dur, start + 0.5);
-  return { start, end, dur };
-}
+
 function setEditProgress(p) {
   $("editProgBar").style.width = Math.round(p * 100) + "%";
   $("editProgTxt").textContent = `Export en cours… ${Math.round(p * 100)} %`;
@@ -1011,7 +1034,10 @@ async function exportRealTime(f, start, end, fi, fo) {
     const rel = t - start;
     ctx.globalAlpha = 1; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
     ctx.globalAlpha = fadeAlpha(rel, dur, fi, fo);
-    try { ctx.drawImage(video, 0, 0, w, h); } catch (e) {}
+    const filter = editFile && imageAdjusted()
+      ? `brightness(${$("editBright").value}) contrast(${$("editContrast").value})`
+      : "none";
+    try { ctx.filter = filter; ctx.drawImage(video, 0, 0, w, h); ctx.filter = "none"; } catch (e) {}
     ctx.globalAlpha = 1;
     gain.gain.value = fadeAlpha(rel, dur, fi, fo);
     setEditProgress(rel / dur);
@@ -1257,7 +1283,11 @@ async function exportEdited() {
   try {
     status("Export en cours…");
     let result;
-    if (typeof window.MP4Box !== "undefined" && typeof window.Mp4Muxer !== "undefined") {
+    if (imageAdjusted()) {
+      status("Réglages d'image actifs — réencodage temps réel (avec son)…");
+      const blob = await exportRealTime(editFile, start, end, 0, 0);
+      result = blob ? { blob, ext: blob.type.includes("mp4") ? "mp4" : "webm" } : null;
+    } else if (typeof window.MP4Box !== "undefined" && typeof window.Mp4Muxer !== "undefined") {
       result = await exportRemux(editFile, start, end, 0, 0);
     } else {
       status("Librairies mp4box/mp4-muxer absentes — export temps réel (avec son).");
@@ -2016,41 +2046,21 @@ for (let g = 0; g < NB_GROUPS; g++) {
   $("tagDlgIn" + g).addEventListener("keydown", e => { if (e.key === "Enter") submitTagDialog(); });
 }
 $("vClose").onclick = closeViewer;
-$("vTags").onclick = () => { const f = currentVideoFile(); if (f) openTagDialog(f); };
 $("vEdit").onclick = () => {
   if (editActive) { $("editPanel").classList.remove("hidden"); updateCutUI(); return; }
   openEditPanel();
 };
 $("vDelete").onclick = deleteCurrentFile;
 $("editDlgClose").onclick = closeEditPanel;
-$("editReduce").onclick = () => { $("editPanel").classList.add("hidden"); };
-$("editMarkStart").onclick = () => {
-  const t = $("vVideo").currentTime;
-  $("editStart").value = t.toFixed(1);
-  const { end } = editBounds();
-  if (end <= t) $("editEnd").value = Math.min(($("vVideo").duration || 0), t + 1).toFixed(1);
-};
-$("editMarkEnd").onclick = () => {
-  const t = $("vVideo").currentTime;
-  $("editEnd").value = t.toFixed(1);
-  const { start } = editBounds();
-  if (start >= t) $("editStart").value = Math.max(0, t - 1).toFixed(1);
-};
-$("editStart").addEventListener("input", () => { if (editActive) updateCutUI(); });
-$("editEnd").addEventListener("input", () => { if (editActive) updateCutUI(); });
-$("editReset").onclick = () => {
-  $("editStart").value = 0;
-  $("editEnd").value = ($("vVideo").duration || 0).toFixed(1);
-};
-$("editPreview").onclick = () => {
-  const { start, end } = editBounds();
-  const v = $("vVideo");
-  clearInterval(previewTimer);
-  v.currentTime = start;
-  v.play().catch(() => {});
-  previewTimer = setInterval(() => {
-    if (v.currentTime >= end || v.ended) { v.pause(); clearInterval(previewTimer); }
-  }, 100);
+for (let g = 0; g < NB_GROUPS; g++) {
+  $("editTags" + g).addEventListener("change", saveEditTags);
+  $("editTags" + g).addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); saveEditTags(); } });
+}
+$("editBright").addEventListener("input", () => { $("editBrightVal").textContent = Math.round(($("editBright").value) * 100) + " %"; });
+$("editContrast").addEventListener("input", () => { $("editContrastVal").textContent = Math.round(($("editContrast").value) * 100) + " %"; });
+$("editImgReset").onclick = () => {
+  $("editBright").value = 1; $("editBrightVal").textContent = "100 %";
+  $("editContrast").value = 1; $("editContrastVal").textContent = "100 %";
 };
 $("editExport").onclick = exportEdited;
 $("editCancel").onclick = () => { exportCancel = true; };
@@ -2076,8 +2086,8 @@ document.addEventListener("keydown", e => {
       updateCutUI();
       return;
     }
-    if (e.key === "s" || e.key === "S") { $("editStart").value = v.currentTime.toFixed(1); updateCutUI(); return; }
-    if (e.key === "e" || e.key === "E") { $("editEnd").value = v.currentTime.toFixed(1); updateCutUI(); return; }
+    if (e.key === "s" || e.key === "S") { cutStart = v.currentTime; updateCutUI(); return; }
+    if (e.key === "e" || e.key === "E") { cutEnd = v.currentTime; updateCutUI(); return; }
     if (e.key === " ") { e.preventDefault(); if (v.paused) v.play().catch(() => {}); else v.pause(); return; }
   }
   if (e.key === "ArrowLeft") seekVideo(-10);
