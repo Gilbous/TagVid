@@ -867,8 +867,9 @@ function fadeAlpha(rel, dur, fi, fo) {
   if (fo > 0 && dur - rel < fo) a *= (dur - rel) / fo;
   return Math.max(0, Math.min(1, a));
 }
-function bitrateFor(w, h) {
-  return Math.min(20e6, Math.max(2e6, Math.round(w * h * 0.3)));
+function bitrateFor(w, h, factor) {
+  const f = factor || parseFloat($("editQuality")?.value) || 0.5;
+  return Math.min(24e6, Math.max(2e6, Math.round(w * h * f)));
 }
 async function uniqueName(parent, origName, suffix) {
   const base = origName.replace(/\.[^.]+$/, "");
@@ -983,6 +984,7 @@ async function exportFast(f, start, end, fi, fo) {
       target: new Mp4Muxer.ArrayBufferTarget(),
       video: { codec: "avc", width: w, height: h },
       fastStart: "in-memory",
+      firstTimestampBehavior: "offset",
     });
   } else {
     const codecId = config.codec === "vp8" ? "V_VP8" : "V_VP9";
@@ -1014,7 +1016,7 @@ async function exportFast(f, start, end, fi, fo) {
       if (exportCancel) { video.pause(); resolve(); return; }
       const t = video.currentTime;
       if (t >= end) { video.pause(); resolve(); return; }
-      const rel = t - start;
+      const rel = count === 0 ? 0 : t - start;
       let frame;
       if (needFade) {
         ctx.globalAlpha = 1; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, w, h);
