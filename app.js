@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.44";
+const APP_JS_VERSION = "1.45";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -999,16 +999,19 @@ async function exportFast(f, start, end, fi, fo) {
     const codecId = config.codec === "vp8" ? "V_VP8" : "V_VP9";
     muxer = new WebMMini.Muxer({ width: w, height: h, codec: codecId });
   }
-  let encoderError = null;
+  let encoderError = null, muxError = null, chunksMuxed = 0;
   const encoder = new VideoEncoder({
     output: (chunk, meta) => {
-      if (useMp4) {
-        muxer.addVideoChunk(chunk, meta);
-      } else {
-        const data = new Uint8Array(chunk.byteLength);
-        chunk.copyTo(data);
-        muxer.addFrame(data, chunk.type === "key", chunk.timestamp / 1000);
-      }
+      try {
+        if (useMp4) {
+          muxer.addVideoChunk(chunk, meta);
+        } else {
+          const data = new Uint8Array(chunk.byteLength);
+          chunk.copyTo(data);
+          muxer.addFrame(data, chunk.type === "key", chunk.timestamp / 1000);
+        }
+        chunksMuxed++;
+      } catch (e) { muxError = e; }
     },
     error: e => { encoderError = e; }
   });
@@ -1047,10 +1050,13 @@ async function exportFast(f, start, end, fi, fo) {
         video.pause();
         const wait = () => {
           if (exportCancel) { resolve(); return; }
-          if (encoder.encodeQueueSize < 5) video.play().catch(() => {});
-          else setTimeout(wait, 50);
+          if (encoder.encodeQueueSize < 5) {
+            video.requestVideoFrameCallback(onFrame);
+            video.play().catch(() => {});
+          } else setTimeout(wait, 50);
         };
         wait();
+        return;
       }
       rVFC();
     };
@@ -1066,12 +1072,18 @@ async function exportFast(f, start, end, fi, fo) {
   encoder.close();
   done();
   if (encoderError) throw new Error("Encodeur : " + encoderError.message);
+  if (muxError) throw new Error("Multiplexeur : " + muxError.message);
   if (exportCancel) return null;
-  if (useMp4) {
-    muxer.finalize();
-    return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), ext: "mp4" };
+  if (chunksMuxed === 0) throw new Error("Aucune frame n'a pu être encodée (0 chunk) — frames capturées : " + count + ".");
+  try {
+    if (useMp4) {
+      muxer.finalize();
+      return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), ext: "mp4" };
+    }
+    return { blob: new Blob([muxer.finalize()], { type: "video/webm" }), ext: "webm" };
+  } catch (e) {
+    throw new Error(`${e.message} (frames capturées : ${count}, chunks multiplexés : ${chunksMuxed})`);
   }
-  return { blob: new Blob([muxer.finalize()], { type: "video/webm" }), ext: "webm" };
 }
 
 async function exportEdited() {
