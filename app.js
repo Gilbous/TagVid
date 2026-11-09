@@ -829,8 +829,10 @@ async function exportRealTime(f, start, end, fi, fo) {
 }
 
 async function exportFast(f, start, end, fi, fo) {
-  if (typeof VideoEncoder === "undefined" || typeof window.WebMMini === "undefined")
-    throw new Error("Export accéléré non supporté par ce navigateur — choisissez « Avec son » (temps réel).");
+  if (typeof window.WebMMini === "undefined")
+    throw new Error("Librairie libs/webm-mini.js introuvable — vérifiez que le dossier libs/ (contenant webm-mini.js) est présent à côté de index.html.");
+  if (typeof VideoEncoder === "undefined")
+    throw new Error("L'encodeur WebCodecs (VideoEncoder) n'est pas disponible dans ce navigateur — choisissez « Avec son » (temps réel).");
   const [video, done] = await loadExportVideo(f);
   video.muted = true;
   const w = video.videoWidth, h = video.videoHeight;
