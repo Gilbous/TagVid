@@ -1,5 +1,5 @@
 "use strict";
-const APP_JS_VERSION = "1.55";
+const APP_JS_VERSION = "1.56";
 
 /* Secours intégré : si libs/webm-mini.js n'a pas pu être chargé (chemin, corruption),
    le mini-multiplexeur est embarqué ici pour garantir l'export accéléré. */
@@ -1056,6 +1056,8 @@ async function exportRemux(f, start, end, fi, fo) {
   if (typeof window.Mp4Muxer === "undefined")
     throw new Error("mp4-muxer.js n'est pas chargé — vérifiez le dossier libs/.");
   const file = await f.handle.getFile();
+  setEditProgress(0);
+  $("editProgTxt").textContent = "Lecture du fichier…";
   const buf = await file.arrayBuffer();
   buf.fileStart = 0;
   const box = MP4Box.createFile();
@@ -1088,7 +1090,7 @@ async function exportRemux(f, start, end, fi, fo) {
     firstTimestampBehavior: "cross-track-offset",
   });
   let vStarted = false, vStartSec = null, vDone = false, aDone = !audioOk, lastSec = null;
-  let vCount = 0, aCount = 0, muxError = null;
+  let vCount = 0, aCount = 0, vSeen = 0, aSeen = 0, muxError = null;
   const vTotal = vt.nb_samples || 1, aTotal = at ? (at.nb_samples || 1) : 0;
   await new Promise((resolve, reject) => {
     box.onSamples = (id, user, samps) => {
@@ -1096,6 +1098,7 @@ async function exportRemux(f, start, end, fi, fo) {
         if (id === vt.id) {
           for (const s of samps) {
             if (vDone || exportCancel) break;
+            vSeen++;
             lastSec = s.dts / vt.timescale;
             const sec = s.dts / vt.timescale;
             if (!vStarted) {
@@ -1112,10 +1115,11 @@ async function exportRemux(f, start, end, fi, fo) {
           if (vCount > 0 && lastSec !== null) {
             setEditProgress(Math.min(0.99, Math.max(0, (lastSec - start) / Math.max(0.1, end - start))));
           }
-          if (vCount >= vTotal) vDone = true;
+          if (vSeen >= vTotal) vDone = true;
         } else if (at && id === at.id) {
           for (const s of samps) {
             if (aDone || exportCancel) break;
+            aSeen++;
             const sec = s.dts / at.timescale;
             if (vStartSec === null || sec < vStartSec - 0.05) continue;
             if (sec >= end) { aDone = true; break; }
@@ -1124,7 +1128,7 @@ async function exportRemux(f, start, end, fi, fo) {
             muxer.addAudioChunkRaw(new Uint8Array(s.data), "key", ts, dur);
             aCount++;
           }
-          if (aCount >= aTotal) aDone = true;
+          if (aSeen >= aTotal) aDone = true;
         }
         if (exportCancel || (vDone && aDone)) resolve();
       } catch (e) { muxError = e; resolve(); }
@@ -1387,6 +1391,12 @@ async function exportEdited() {
   const v = $("vVideo");
   const { start, end } = editBounds();
   if (end - start < 1) { alert("Sélection trop courte (1 seconde minimum)."); return; }
+  let srcSize = 0;
+  try { srcSize = (await editFile.handle.getFile()).size; } catch (e) {}
+  if (srcSize > 2e9) {
+    alert(`Fichier trop volumineux pour l'export intégré (${fmtBytes(srcSize)} — limite pratique ~2 Go).\nUtilisez un outil externe (par ex. LosslessCut, découpe instantanée sans perte).`);
+    return;
+  }
   if (!(await ensureWrite())) return;
   exportCancel = false;
   $("editProg").style.display = "";
